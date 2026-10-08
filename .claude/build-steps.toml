@@ -1,0 +1,6 @@
+# agent-build's build steps: the global /build flow names a step, this file names the command.
+# Reader and fallbacks: ~/.agent-build/runtime/steps.ts (`node <it> .` prints the resolved table).
+install     = "pnpm install --frozen-lockfile"
+checks      = "pnpm -s typecheck && pnpm -s test"
+exit_checks = "pnpm -s typecheck && pnpm -s test"
+tests       = "pnpm -s test"

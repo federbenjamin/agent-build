@@ -1,0 +1,19 @@
+#!/bin/sh
+# Pre-push: this repo's own type-check and tests, so a red test stops the push that caused it.
+# Turned on per clone: git config core.hooksPath .githooks
+set -e
+cd "$(git rev-parse --show-toplevel)"
+# git hands a hook its own GIT_DIR, GIT_WORK_TREE and GIT_INDEX_FILE (always from a linked worktree).
+# A test that runs git in a temp repo would then write to THIS repo instead: a push from a worktree
+# left this repo with core.bare set and fixture commits on main (2026-10-04).
+unset $(git rev-parse --local-env-vars)
+echo "pre-push: pnpm typecheck, pnpm test (about 60s)" >&2
+pnpm -s typecheck
+log="${TMPDIR:-/tmp}/agent-build-pre-push.$$.txt"
+trap 'rm -f "$log"' EXIT
+if ! pnpm -s test >"$log" 2>&1; then
+  # The failing tests only; the whole report is long.
+  sed -n '/^✖ failing tests:/,$p' "$log" | grep . >&2 || tail -n 40 "$log" >&2
+  echo "pre-push: tests failed — push stopped (pnpm test prints the whole report)" >&2
+  exit 1
+fi
