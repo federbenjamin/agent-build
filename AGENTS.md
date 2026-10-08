@@ -1,6 +1,6 @@
 # agent-build
 
-The `/build` system: the skill (`skills/build/`), its runtime scripts (`runtime/`), and its twelve agents (`agents/`, declared in `agents.json`). `README.md` has the layout.
+The `/build` system: the skill (`skills/build/`), its runtime scripts (`runtime/`), and its twelve agents (`agents/`, declared in `agents.json`). `docs/layout.md` has the layout.
 
 ## Rules
 
@@ -15,5 +15,9 @@ The `/build` system: the skill (`skills/build/`), its runtime scripts (`runtime/
 ## Git workflow
 
 - `main` changes only through a PR, squash-merged.
-- Branch names: `<type>/<slug>`, the type being the commit type (`feat`, `fix`, `docs`, `chore`, `refactor`).
 <!-- <<< git-workflow -->
+
+## Project state
+
+- 2026-10-07: not launched — no release yet. Retires at the first version tag.
+- 2026-10-07: the project holds no user data; a run reads and writes the user's own repos and state folders on their machine, and its PRs go to the user's own remotes. Retires if it ever stores or sends data anywhere else.

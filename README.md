@@ -1,11 +1,19 @@
 # agent-build
 
-`/build` is a Claude Code skill that takes one unit of work from a request to a merged pull request:
+<p align="center"><strong>A Claude Code plugin that takes one unit of work from a request to a merged pull request.</strong></p>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/federbenjamin/agent-build" alt="License"></a>
+  <a href=".github/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/federbenjamin/agent-build/ci.yml" alt="CI"></a>
+</p>
+
+`/build` is a [Claude Code](https://code.claude.com) skill that takes one unit of work from a request to a merged pull request:
 it writes a brief, builds it with one agent per part, reviews the diff with a wave of reader agents
 and up to four fix rounds, hand-tests it, and ships it. It runs in your repo through your own `git`,
 `gh`, and test commands, which each repo maps once in a small steps file. This repo is the whole
 system as a Claude Code plugin: the skill, its twelve agents, the runtime scripts its steps run, and
-a guard that keeps a subagent from pushing.
+a guard that keeps a subagent from pushing. It is for anyone who works in a repo with Claude Code and
+wants a whole unit of work carried through by one command, under their own branch and merge rules.
 
 ## Install
 
@@ -50,26 +58,51 @@ neither appears in `agents/*.md`: `hooks:` (the guard is a plugin hook instead) 
 has `claudeMd: false` carries `omitClaudeMd: true` in its own frontmatter; `buildDocPins.test.ts`
 holds the row and the file together.
 
-## Permission mode
+## Features
+
+- **One command from a request to a merged PR.** `/build <request>` writes the brief, builds each part with its own agent, reviews the diff with a wave of readers and up to four fix rounds, hand-tests the result, and ships it through your repo's own push, PR and merge commands.
+- **Your commands, mapped once.** Each repo names its install, checks, tests, push, PR and merge commands in `.claude/build-steps.toml`; a repo without one runs on the built-in defaults (`git push`, `gh pr create`, `gh pr merge`) and the run's record says so.
+- **Twelve agents with one job each.** Brief writer, builders, reviewers, fixers, test author, hand tester and more, spawned as `agent-build:<name>`, each with its own model and context.
+- **A subagent never pushes.** A hook refuses a push or a PR open, ready, edit or merge from any subagent, in the built-in `git`/`gh` forms and in your repo's own steps, and logs each refusal.
+- **Codex is optional.** With the `codex` CLI on PATH, Codex writes plain test slices and pairs a second review with Claude's; without it, every job runs on Claude.
+- **A launcher can follow the run.** Each milestone goes out as one JSON line through `BUILD_EVENT_CMD`, so a desk or dashboard can watch a build without the build knowing it.
+
+## Usage
+
+In a Claude Code session, in a worktree of the repo the work belongs to, with the request in a file (a plan, a brief, or a ticket):
+
+```
+/build <path to the request file>
+```
+
+Only a typed `/build` runs the skill. It brief-writes, builds, reviews, hand-tests and ships from that one session, and stops only for what the request and the repo's rules do not settle.
+
+### Permission mode
 
 /build runs `git`, `pnpm`, and `node` at every step, and its agents inherit the session's permission
 mode (a plugin agent's own `permissionMode` is ignored). Run it in `auto` mode, or in `acceptEdits`
 with Bash allowed. In `default` mode every command prompts.
 
-## What a run costs
+## Configuration
 
-Time, from this repo's own shipped runs (BRIEF.md's budget table: the median wall hours from the
-brief commit to the PR opening, over the 20 newest): 0.35h for a small change (S), 0.70h for a
-medium one (M), 2.33h for an extra-large one (XL). The budgets a brief starts from are 0.5h, 1h,
-2.5h, and 4h by size.
+### Build steps
 
-Spawns: one builder per part of the unit, two to five readers at the review wave depending on the
-risk class, then up to four fix rounds, each with a fixer, a confirming read, and a hand tester.
-Tokens: the one measured sample is a test-writer slice of four functions, which peaked its writer
-at 324,634 tokens of context (`TEST_SLICE_MAX_FUNCTIONS` in `runtime/thresholds.ts`); a run holds
-several such agents.
+A repo maps each step the flow names to its own command in `.claude/build-steps.toml`;
+`node ~/.agent-build/runtime/steps.ts <repo>` prints the resolved table, and
+`node ~/.agent-build/runtime/steps.ts --template <name>` prints the file a new repo starts from
+(every step commented out, so each stays on its fallback until the repo fills it in).
 
-## Codex (optional)
+### Where files go
+
+| variable | what lives there | default |
+| --- | --- | --- |
+| `AGENT_BUILD_STORE` | a public repo's build steps, notes, and briefs, at `<store>/<owner>/<name>/` | `~/.local/state/agent-build/store` |
+| `AGENT_BUILD_RUN_ROOT` | each run's dir: its ledger, reader findings, fix tables, hand-test files | `~/.local/state/agent-build/runs` |
+| `SESSION_LOGS_DIR` | session logs, when you keep them; a run writes to one only when it is set | none |
+
+`node ~/.agent-build/runtime/lib/repoId.ts .` prints the store and the run root as resolved.
+
+### Codex (optional)
 
 With the `codex` CLI on PATH, Codex does three jobs: it writes `plain` test slices, it runs the
 generalist review at the reads after each fix, and it pairs a second generalist read with the
@@ -98,30 +131,26 @@ project_doc_max_bytes = 0
 `node ~/.agent-build/runtime/codexRole.ts <role> --tree <abs-dir> --dispatch <file> --out <file> --dry-run`
 prints where the role resolved from and the `codex` command it would run, and runs nothing.
 
-## Where files go
+### Build events
 
-| variable | what lives there | default |
-| --- | --- | --- |
-| `AGENT_BUILD_STORE` | a public repo's build steps, notes, and briefs, at `<store>/<owner>/<name>/` | `~/.local/state/agent-build/store` |
-| `AGENT_BUILD_RUN_ROOT` | each run's dir: its ledger, reader findings, fix tables, hand-test files | `~/.local/state/agent-build/runs` |
-| `SESSION_LOGS_DIR` | session logs, when you keep them; a run writes to one only when it is set | none |
+A launcher that wants to follow a build learns of its milestones through `BUILD_EVENT_CMD`; the variable, the event schema and the consumer rules are in [docs/build-events.md](docs/build-events.md).
 
-`node ~/.agent-build/runtime/lib/repoId.ts .` prints the store and the run root as resolved.
+## How it works
 
-## Layout
+### What a run costs
 
-| path | what it is |
-| --- | --- |
-| `.claude-plugin/` | `plugin.json` (the plugin `agent-build`) and `marketplace.json` (this repo is its own marketplace, `"source": "./"`) |
-| `skills/build/` | the `/build` skill: `SKILL.md` and one file per stop (`BRIEF.md`, `BUILD.md`, `CLOSE.md`, `SHIP.md`, …). Only a typed `/build` runs it (`disable-model-invocation`) |
-| `runtime/` | the scripts the skill runs (`steps.ts`, `reviewTable.ts`, `shipGate.ts`, …), `lib/`, and their tests in `__tests__/` |
-| `agents/<name>.md` | each build agent's prompt and frontmatter; the plugin loads them as `agent-build:<name>` |
-| `agents.json` | each build agent's declaration: `name`, `description`, models, Codex settings, `context` |
-| `hooks/` | `hooks.json` registers `no-push-guard.sh` on every Bash call (below) |
-| `tests/` | repo-level tests: `steps.ts` resolution, `install.sh`, `agents.json` against `agents/` |
-| `install.sh` | makes the `~/.agent-build` links and enables the plugin |
+Time, from this repo's own shipped runs ([BRIEF.md](skills/build/BRIEF.md)'s budget table: the median wall hours from the
+brief commit to the PR opening, over the 20 newest): 0.35h for a small change (S), 0.70h for a
+medium one (M), 2.33h for an extra-large one (XL). The budgets a brief starts from are 0.5h, 1h,
+2.5h, and 4h by size.
 
-## The no-push guard
+Spawns: one builder per part of the unit, two to five readers at the review wave depending on the
+risk class, then up to four fix rounds, each with a fixer, a confirming read, and a hand tester.
+Tokens: the one measured sample is a test-writer slice of four functions, which peaked its writer
+at 324,634 tokens of context (`TEST_SLICE_MAX_FUNCTIONS` in `runtime/thresholds.ts`); a run holds
+several such agents.
+
+### The no-push guard
 
 `hooks/no-push-guard.sh` runs before every Bash call in a session with the plugin enabled and lets a
 main session's command through at once; in a subagent (the hook input carries `agent_id`) it refuses a
@@ -133,68 +162,15 @@ gaps and the deliberate over-blocks. It appends one line per firing in a subagen
 `~/.local/state/agent-build/hooks/no-push-guard.log`; read it back with
 `awk '{print $2}' ~/.local/state/agent-build/hooks/no-push-guard.log | sort | uniq -c`.
 
-## Build steps
+### Layout
 
-A repo maps each step the flow names to its own command in `.claude/build-steps.toml`;
-`node ~/.agent-build/runtime/steps.ts <repo>` prints the resolved table, and
-`node ~/.agent-build/runtime/steps.ts --template <name>` prints the file a new repo starts from
-(every step commented out, so each stays on its fallback until the repo fills it in).
+What each folder of this repo holds is in [docs/layout.md](docs/layout.md).
 
-## Build events
+## Contributing
 
-A launcher that wants to follow a build (a desk, a dashboard) learns of its milestones through
-`BUILD_EVENT_CMD`. /build never names a launcher: at each milestone its stop files run
-`~/.agent-build/runtime/buildEvent.ts <event> --runid <runid> [flags]`, and that script hands the event
-to whatever command the variable holds.
+Report a problem in [issues](https://github.com/federbenjamin/agent-build/issues). PRs are welcome; see [CONTRIBUTING](https://github.com/federbenjamin/.github/blob/main/CONTRIBUTING.md) and [SECURITY](https://github.com/federbenjamin/.github/blob/main/SECURITY.md).
 
-**Who sets it.** The launcher, in the environment of the session it opens. Never the repo: whether
-anyone listens depends on who launched the build, not on what is being built.
-
-**How the command runs.** The value is split on runs of whitespace into a command and its arguments
-and run directly, never through a shell, so quoting and pipes do not work and a path holding a space
-cannot be named (point at a wrapper script instead). The event is one line of JSON on the command's
-stdin, ending in a newline; the command's stdout is dropped. It is killed after
-`BUILD_EVENT_TIMEOUT_MS` (30,000 by default; a repo's thresholds file can override it).
-
-**A consumer never fails a build.** When the command exits non-zero, times out, or cannot start,
-`buildEvent.ts` prints one warning on stderr, `buildEvent: BUILD_EVENT_CMD failed (<program>): <error>`,
-and exits 0. The warning names the program and never its arguments, so a token passed as an argument
-stays out of the build's transcript; the consumer's own stderr follows the error as it was written.
-Its exit codes:
-
-| exit | meaning |
-| --- | --- |
-| 0 | the event was handed over, nobody is listening (the variable is unset or blank), or the consumer failed (warned) |
-| 2 | a usage error or an invalid event: a bug in the stop file's line, refused whether or not anyone listens |
-
-**The schema** (`schema: 1`). Every event is one JSON object with the keys `schema`, `runid`, `at`,
-`event`, then the event's own fields, in that order. `runid` is the run's id, minted once per unit's
-run, so one session's events can carry several; key on the unit `id`, never on `runid`. `at` is the
-emitter's UTC ISO time. A key outside the list is refused, so a new field is a schema bump.
-
-| `event` | fields | fired by |
-| --- | --- | --- |
-| `plan` | `units: [{id, title}]`, every unit the session will build, in plan order | BRIEF step 6, after the brief's commit; FROM-BRANCH, after the hand-test file's commit |
-| `unit-merged` | `id`, `pr` | SHIP step 5, once the unit's PR has merged |
-| `blocked` | `id` (optional), `needs`: what the operator must do | CLOSE §The launcher's events, wherever a run stops for the operator or banks, except a bank that ends the session's last unit, which fires `finished` instead |
-| `finished` | `outcome`: `merged` or `unmerged`, `pr` (optional) | once per session, after its last unit: `merged` at SHIP step 5; `unmerged` when the last unit banks (CLOSE) or is held (SHIP, top) |
-
-A unit `id` is the plan's unit id in lowercase (`u1`, `u2`) for a unit of the session's plan; any
-other unit (work with no plan, a batch, a `--from-branch` run) has its run's `runid`, never its branch
-name, which may hold `=`. Each unit mints its own `runid` with `mktemp`, which never hands out a name
-already taken, so no two units of one session share an id. It holds no whitespace and no `=`.
-
-**Consumers are idempotent.** After a compaction or a resume a stop may fire the same event again, so
-a repeat must change nothing: key a `unit-merged` and a `blocked` on the event and the unit `id`, and
-a `plan` on each listed unit's `id`, adding only the units not yet known. `finished` names no unit: it
-is the session's outcome, and the last one received stands, since a run that banked on its last unit
-(`finished` `unmerged`) and was later unbanked fires `finished` again, `merged`.
-
-**Types for a consumer.** Import from `~/.agent-build/runtime/lib/buildEvents.ts`: the event types,
-`readBuildEvent` (parse and validate one line), and `formatBuildEvent`. It pulls in only
-`lib/shape.ts`.
-
-## Tests
+### Tests
 
 ```
 pnpm install
@@ -208,9 +184,13 @@ pnpm -s test
 git config core.hooksPath .githooks
 ```
 
-## The dependency rule
+### The dependency rule
 
 The harness may depend on this repo; this repo never depends on the harness. No file here reads,
 imports, or names a path under the harness's checkout, in code or in tests. Paths under
 `~/.agent-build/` are this repo's own installed name and are fine. A test that needs the harness's
 manifest (its other agents, `commands`, `hooks`, `scripts`) lives in the harness.
+
+## License
+
+MIT © Benjamin Feder
