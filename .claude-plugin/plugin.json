@@ -1,0 +1,11 @@
+{
+  "name": "agent-build",
+  "version": "0.1.0",
+  "description": "/build: one unit of work from a request to a merged PR through BRIEF, BUILD, CLOSE and SHIP, with its twelve agents, runtime scripts and the subagent no-push guard.",
+  "author": {
+    "name": "federbenjamin"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/federbenjamin/agent-build",
+  "repository": "https://github.com/federbenjamin/agent-build"
+}

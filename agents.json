@@ -1,0 +1,158 @@
+{
+  "agents": [
+    {
+      "name": "build-verifier",
+      "description": "Completeness reader in the /build CLOSE wave: grades the diff against the brief committed as the branch first commit. Read-only.",
+      "claudeModel": "sonnet",
+      "codexModel": "gpt-5.6-terra",
+      "codexReasoningEffort": "high",
+      "codexSandboxMode": "read-only",
+      "context": {
+        "claudeMd": false,
+        "contract": true,
+        "principles": false
+      }
+    },
+    {
+      "name": "brief-writer",
+      "description": "The /build brief writer: one unit's brief from its ticket, plan sections, or request, checked and classed. Never commits.",
+      "claudeModel": "fable",
+      "codexModel": "gpt-5.6-sol",
+      "codexReasoningEffort": "xhigh",
+      "codexSandboxMode": "workspace-write",
+      "context": {
+        "claudeMd": true,
+        "contract": true,
+        "principles": true
+      }
+    },
+    {
+      "name": "builder",
+      "description": "The /build builder: one part of a unit from its brief, on the model the spawn passes.",
+      "codexModel": "gpt-5.6-sol",
+      "codexReasoningEffort": "xhigh",
+      "codexSandboxMode": "workspace-write",
+      "context": {
+        "claudeMd": true,
+        "contract": true,
+        "principles": true
+      }
+    },
+    {
+      "name": "fixer",
+      "description": "The /build fix-round agent: checks each table row at the code, fixes it with a test, records each row.",
+      "codexModel": "gpt-5.6-sol",
+      "codexReasoningEffort": "xhigh",
+      "codexSandboxMode": "workspace-write",
+      "context": {
+        "claudeMd": true,
+        "contract": true,
+        "principles": true
+      }
+    },
+    {
+      "name": "gate-silent-failure-hunter",
+      "description": "Silent-failure reader in the /build CLOSE wave at R1 and above: swallowed errors, bad fallbacks, unobservable degrade paths. Read-only.",
+      "claudeModel": "sonnet",
+      "codexModel": "gpt-5.6-sol",
+      "codexReasoningEffort": "high",
+      "codexSandboxMode": "read-only",
+      "context": {
+        "claudeMd": false,
+        "contract": true,
+        "principles": false
+      }
+    },
+    {
+      "name": "gate-warden",
+      "description": "Push-pipeline auditor over the push_stats step: drift, cache, refusals, retry cost. Operator-invoked; read-only.",
+      "claudeModel": "opus",
+      "codexModel": "gpt-5.6-terra",
+      "codexReasoningEffort": "high",
+      "codexSandboxMode": "read-only",
+      "context": {
+        "claudeMd": false,
+        "contract": false,
+        "principles": false
+      }
+    },
+    {
+      "name": "hand-tester",
+      "description": "Runs the brief's hand test block in the session tree and records pass or fail. Edits no code.",
+      "claudeModel": "opus",
+      "codexModel": "gpt-5.6-sol",
+      "codexReasoningEffort": "medium",
+      "codexSandboxMode": "workspace-write",
+      "context": {
+        "claudeMd": false,
+        "contract": false,
+        "principles": false
+      }
+    },
+    {
+      "name": "prior-art",
+      "description": "Prior-art sweeper: reuse, generalize, consolidate, or justified-new verdicts with evidence before a new module is designed. Report-only.",
+      "claudeModel": "opus",
+      "codexModel": "gpt-5.6-terra",
+      "codexReasoningEffort": "high",
+      "codexSandboxMode": "read-only",
+      "context": {
+        "claudeMd": true,
+        "contract": true,
+        "principles": false
+      }
+    },
+    {
+      "name": "review-cursory",
+      "description": "Generalist reader of one diff in the /build CLOSE wave, and the whole review at R0; its Rubric is the one finding block every reader uses. Read-only.",
+      "claudeModel": "sonnet",
+      "codexModel": "gpt-5.6-sol",
+      "codexReasoningEffort": "high",
+      "codexSandboxMode": "read-only",
+      "context": {
+        "claudeMd": true,
+        "contract": true,
+        "principles": false
+      }
+    },
+    {
+      "name": "security-review",
+      "description": "Security reader in the /build CLOSE wave at R2: rule compliance and concrete exploitability. Read-only on the code.",
+      "claudeModel": "sonnet",
+      "codexModel": "gpt-5.6-sol",
+      "codexReasoningEffort": "xhigh",
+      "codexSandboxMode": "read-only",
+      "context": {
+        "claudeMd": true,
+        "contract": true,
+        "principles": false
+      }
+    },
+    {
+      "name": "simplifier",
+      "description": "Reads a design or a diff for simplification, efficiency, altitude, encapsulation, cohesion, and contract defects. Read-only.",
+      "claudeModel": "opus",
+      "codexModel": "gpt-5.6-terra",
+      "codexReasoningEffort": "high",
+      "codexSandboxMode": "read-only",
+      "context": {
+        "claudeMd": true,
+        "contract": true,
+        "principles": false
+      }
+    },
+    {
+      "name": "test-author",
+      "description": "Writes and mutation-proves batches of three or more tests for code someone else wrote, from its slice of the brief. A database slice runs as a Claude spawn in its own worktree; every other slice runs on Codex in the build writers worktree.",
+      "claudeModel": "sonnet",
+      "codexModel": "gpt-5.6-terra",
+      "codexReasoningEffort": "high",
+      "codexSandboxMode": "workspace-write",
+      "context": {
+        "claudeMd": false,
+        "contract": false,
+        "principles": false
+      }
+    }
+  ]
+}
