@@ -12,7 +12,8 @@ it writes a brief, builds it with one agent per part, reviews the diff with a wa
 and up to four fix rounds, hand-tests it, and ships it. It runs in your repo through your own `git`,
 `gh`, and test commands, which each repo maps once in a small steps file. This repo is the whole
 system as a Claude Code plugin: the skill, its twelve agents, the runtime scripts its steps run, and
-a guard that keeps a subagent from pushing.
+a guard that keeps a subagent from pushing. It is for anyone who works in a repo with Claude Code and
+wants a whole unit of work carried through by one command, under their own branch and merge rules.
 
 ## Install
 
@@ -138,7 +139,7 @@ A launcher that wants to follow a build learns of its milestones through `BUILD_
 
 ### What a run costs
 
-Time, from this repo's own shipped runs (BRIEF.md's budget table: the median wall hours from the
+Time, from this repo's own shipped runs ([BRIEF.md](skills/build/BRIEF.md)'s budget table: the median wall hours from the
 brief commit to the PR opening, over the 20 newest): 0.35h for a small change (S), 0.70h for a
 medium one (M), 2.33h for an extra-large one (XL). The budgets a brief starts from are 0.5h, 1h,
 2.5h, and 4h by size.
