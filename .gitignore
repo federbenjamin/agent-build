@@ -1,3 +1,4 @@
 /.claude/worktrees/
 /.claude/run-state/
 node_modules/
+/.claude/

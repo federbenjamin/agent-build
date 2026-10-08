@@ -40,7 +40,7 @@ const TEMPLATE_HINTS: [step: string, hint: string][] = [
 ];
 
 /** The `build-steps.toml` a repo starts from: every step commented out, so each stays on its
- *  fallback until the repo fills it in. `gh-repo-defaults` writes it for a new repo. */
+ *  fallback until the repo fills it in; a repo-setup script can write it for a new repo. */
 export function stepsTemplate(repoName: string): string {
   const width = Math.max(...TEMPLATE_HINTS.map(([step]) => step.length));
   return [
