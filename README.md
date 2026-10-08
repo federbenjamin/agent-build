@@ -60,7 +60,7 @@ holds the row and the file together.
 ## Features
 
 - **One command from a request to a merged PR.** `/build <request>` writes the brief, builds each part with its own agent, reviews the diff with a wave of readers and up to four fix rounds, hand-tests the result, and ships it through your repo's own push, PR and merge commands.
-- **Your commands, mapped once.** Each repo names its install, checks, tests, push, PR and merge commands in `.claude/build-steps.toml`; a repo without one runs on stated fallbacks and says so in its ledger.
+- **Your commands, mapped once.** Each repo names its install, checks, tests, push, PR and merge commands in `.claude/build-steps.toml`; a repo without one runs on the built-in defaults (`git push`, `gh pr create`, `gh pr merge`) and the run's record says so.
 - **Twelve agents with one job each.** Brief writer, builders, reviewers, fixers, test author, hand tester and more, spawned as `agent-build:<name>`, each with its own model and context.
 - **A subagent never pushes.** A hook refuses a push or a PR open, ready, edit or merge from any subagent, in the built-in `git`/`gh` forms and in your repo's own steps, and logs each refusal.
 - **Codex is optional.** With the `codex` CLI on PATH, Codex writes plain test slices and pairs a second review with Claude's; without it, every job runs on Claude.
