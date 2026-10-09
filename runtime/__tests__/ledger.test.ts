@@ -158,13 +158,9 @@ test("`build:` takes parts=: each entry a part, its model, and its ids joined by
   assert.throws(() => parseLedger(ledger(`fix-1: 1/1 | model=opus | agent=f | parts=P1:opus:f | from=${A} | sha=${A}`)), /takes no `parts=` field/);
 });
 
-test("`build:` may take started=<UTC ISO>; another shape is refused naming it, and a line without it has no started", () => {
-  assert.equal(parseLedger(ledger(`build: model=opus | agent=a1 | sha=${A} | started=2026-10-06T08:00:00Z`)).build?.started, "2026-10-06T08:00:00Z");
-  assert.equal(parseLedger(ledger(`build: model=opus | agent=a1 | sha=${A} | started=2026-10-06T08:00:00.123Z`)).build?.started, "2026-10-06T08:00:00.123Z");
-  for (const bad of ["yesterday", "2026-10-06 08:00", "2026-10-06T08:00:00+02:00", "2026-13-40T08:00:00Z"]) {
-    assert.throws(() => parseLedger(ledger(`build: model=opus | agent=a1 | sha=${A} | started=${bad}`)), /is not UTC ISO `YYYY-MM-DDTHH:MM:SSZ`/, bad);
-  }
-  assert.equal(Object.hasOwn(parseLedger(ledger(`build: model=opus | agent=a1 | sha=${A}`)).build!, "started"), false);
+test("an older ledger's `build: … | started=` still parses, to the same build; another move refuses it", () => {
+  const plain = parseLedger(ledger(`build: model=opus | agent=a1 | sha=${A}`)).build;
+  assert.deepEqual(parseLedger(ledger(`build: model=opus | agent=a1 | sha=${A} | started=2026-10-06T08:00:00Z`)).build, plain);
   assert.throws(() => parseLedger(ledger(`fix-1: 1/1 | model=opus | agent=f | started=2026-10-06T08:00:00Z | from=${A} | sha=${A}`)), /takes no `started=` field/);
 });
 

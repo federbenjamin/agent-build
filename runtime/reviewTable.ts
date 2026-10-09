@@ -26,9 +26,8 @@
  *
  * `build` writes that round's key of `table.json` (others kept) and, except for `final`,
  * `table-<round>.md`; prints `round <r> · head <sha> · rows <n> (<kind> <k>, …) · leftovers <n> ·
- * banked <n>`, one `refused: <file> — <error>` line per refused file, for `final` the `open:` line,
- * and last the wall budget's `budget:` line (`lib/budget.ts`; `— over: spawn nothing` is CLOSE.md
- * §The budget stop, a verdict, never an exit code). Exit 0 written, nothing refused · 1 written with refusals · 2 usage, a prior round missing, or bad input.
+ * banked <n>`, one `refused: <file> — <error>` line per refused file, and for `final` the `open:` line.
+ * Exit 0 written, nothing refused · 1 written with refusals · 2 usage, a prior round missing, or bad input.
  *
  * `leftovers` prints `final.leftovers`, one line each, for the standing ticket. Exit 0 · 2 usage or no
  * final round.
@@ -43,7 +42,6 @@
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 
-import { budgetVerdict, formatBudget } from "./lib/budget.ts";
 import { assertKnownFlags, takeValue } from "./lib/cliArgs.ts";
 import { exitWhenFlushed } from "./lib/exitWhenFlushed.ts";
 import { type ExecFn, gitOut } from "./lib/gitOps.ts";
@@ -51,7 +49,7 @@ import { isMain } from "./lib/isMain.ts";
 import { type Ledger, parseLedger } from "./lib/ledger.ts";
 import { treeBranchError } from "./lib/owed.ts";
 import { STAGE_READER_NAMES } from "./lib/riskClass.ts";
-import { briefBudgetHours, gatherRound, missingHandTestOutputs, readerFiles, resolveTargets } from "./lib/runDir.ts";
+import { gatherRound, missingHandTestOutputs, readerFiles, resolveTargets } from "./lib/runDir.ts";
 import {
   FIX_ROUNDS,
   type FixFile,
@@ -222,10 +220,6 @@ async function runBuild(argv: string[], io: Io): Promise<number> {
   const table = readTable(runDir);
   const head = flags["--head"] ?? keptHead(roundId, table, io) ?? gitOut(["rev-parse", "HEAD"], { cwd: repo, ...git }).trim();
   const isTarget = resolveTargets(ledger, repo, head, { ...git, note: io.err });
-  const started = ledger.build?.started ?? null;
-  const budgetHours = briefBudgetHours(ledger, repo, git);
-  // Before the write, so a malformed `budget:` line or a bad `started=` stops it like a malformed target list.
-  budgetVerdict(started, budgetHours, new Date());
   const t = (await loadThresholds(repo)).values;
   const merge: MergeLimits = { near: t.TABLE_MERGE_NEAR_LINES, exactAbove: t.TABLE_MERGE_EXACT_ABOVE_LINES };
 
@@ -234,8 +228,6 @@ async function runBuild(argv: string[], io: Io): Promise<number> {
   writeFileSync(join(runDir, "table.json"), serialiseTableJson(result.table));
   if (roundId !== "final") writeFileSync(join(runDir, `table-${roundId}.md`), renderRoundTable(roundId, result.round));
   for (const line of summaryLines(roundId, result.round)) io.out(line);
-  // Sampled again after the write: the fixer spawn this line gates follows the whole build.
-  io.out(formatBudget(budgetVerdict(started, budgetHours, new Date())));
   return result.round.refused.length > 0 ? 1 : 0;
 }
 

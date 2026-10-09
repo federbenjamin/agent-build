@@ -31,7 +31,6 @@ test("confirm-1 at R2 prints the range, both signals with their source, each rea
       "reader: security-review — owed (R2; fix-security fires)",
       "reader: build-verifier — not owed (no amend brief:, no rename); run <manifest> --brief-file <brief> --no-exercise yourself",
       "hand-test: all claims (H1) · needs: stack",
-      "budget: unenforced (no started=)",
     ]);
   }, R2_BRIEF);
 });
@@ -88,7 +87,6 @@ test("a read that is not owed prints one line, then only the failed claims", asy
       assert.deepEqual(r.out, [
         "stage confirm-2: not owed — fix-2 changed no file and dropped no row",
         "hand-test: claims H2 · needs: sim",
-        "budget: unenforced (no started=)",
       ]);
     },
     { brief: briefText({ claims: TWO_CLAIMS }) }
@@ -108,30 +106,6 @@ test("branch=: a tree on another branch than the ledger's is exit 2 with the mes
     run.ledger(lines("quick/x"));
     const own = await plan(run, ["--stage", "confirm-1"]);
     assert.equal(own.code, 0, own.err.join("\n"));
-  });
-});
-
-test("with started= and the brief's budget: the last line is the verdict, ok under and over at or past; a future start is exit 2", async () => {
-  await withRun(async (run) => {
-    const s1 = run.commit({ "src/app.ts": "export const a = 3;\n" }, "fix 1");
-    const started = (iso: string) => [
-      ...briefedHead("R1", run.wave).map((l) => (l.startsWith("build:") ? `${l} | started=${iso}` : l)),
-      `fix-1: 1/1 | model=sonnet | agent=f1 | from=${run.wave} | sha=${s1}`,
-    ];
-    run.ledger(started(new Date(Date.now() - 30 * 60_000).toISOString()));
-    const ok = await plan(run, ["--stage", "confirm-1"]);
-    assert.equal(ok.code, 0, ok.err.join("\n"));
-    assert.equal(ok.out.at(-1), "budget: 0.5h of 2h — ok");
-
-    run.ledger(started("2020-01-01T00:00:00Z"));
-    const over = await plan(run, ["--stage", "confirm-1"]);
-    assert.equal(over.code, 0, over.err.join("\n"));
-    assert.match(over.out.at(-1)!, /^budget: \d+\.\dh of 2h — over: spawn nothing$/);
-
-    run.ledger(started("2999-01-01T00:00:00Z"));
-    const future = await plan(run, ["--stage", "confirm-1"]);
-    assert.equal(future.code, 2);
-    assert.match(future.err[0]!, /^stagePlan: budgetVerdict: started=2999-01-01T00:00:00Z is later than now/);
   });
 });
 

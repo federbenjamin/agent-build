@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
-import { codexArgs, codexEnv, defaultSandbox, main, parseRoleToml } from "../codexRole.ts";
+import { codexArgs, codexEnv, defaultSandbox, main, parseRoleToml, type RolePins } from "../codexRole.ts";
 import { withCapturedConsole } from "./helpers/captureConsole.ts";
 import { withTmpDir } from "./helpers/tmpDir.ts";
 
@@ -30,7 +30,45 @@ test("a generated Codex role TOML preserves all three pins", () => {
     effort: "high",
     instructions: "Follow the role contract.",
     projectDocs: true,
+    sandbox: null,
   });
+});
+
+test("the role's own sandbox wins over the default: toml sandbox_mode, then the agents.json row, then defaultSandbox", () => {
+  withTmpDir("codex-role-", (dir) => {
+    const dispatch = join(dir, "dispatch.md");
+    const out = join(dir, "result.md");
+    writeFileSync(dispatch, "Read this diff.\n");
+    const sandboxOf = (role: string, deps: { readRole?: () => string | null; repoRole?: () => RolePins | null }) => {
+      let args: string[] = [];
+      const status = withCapturedConsole(() =>
+        main([role, "--tree", dir, "--dispatch", dispatch, "--out", out], {
+          ...deps,
+          spawn: (_cmd, received) => {
+            args = received;
+            return 0;
+          },
+        })
+      );
+      assert.equal(status, 0);
+      return args[args.indexOf("-s") + 1];
+    };
+    const repoPins = (sandbox: RolePins["sandbox"]): RolePins => ({ ...parseRoleToml(roleToml()), sandbox });
+    // defaultSandbox("test-author") is workspace-write; each pin below says otherwise and wins.
+    assert.equal(sandboxOf("test-author", { readRole: () => roleToml({ sandbox_mode: "read-only" }) }), "read-only");
+    assert.equal(sandboxOf("review-cursory", { readRole: () => roleToml({ sandbox_mode: "workspace-write" }) }), "workspace-write");
+    assert.equal(sandboxOf("test-author", { readRole: () => null, repoRole: () => repoPins("read-only") }), "read-only");
+    // Named nowhere: the default.
+    assert.equal(sandboxOf("test-author", { readRole: () => roleToml() }), "workspace-write");
+    assert.equal(sandboxOf("review-cursory", { readRole: () => null, repoRole: () => repoPins(null) }), "read-only");
+  });
+});
+
+test("a sandbox other than read-only or workspace-write is refused, never passed to Codex", () => {
+  assert.throws(
+    () => parseRoleToml(roleToml({ sandbox_mode: "danger-full-access" })),
+    /codexRole: sandbox_mode in role toml must be read-only or workspace-write, got "danger-full-access"/
+  );
 });
 
 test("a brief-only role TOML pins project_doc_max_bytes = 0, and the run passes it to Codex", () => {

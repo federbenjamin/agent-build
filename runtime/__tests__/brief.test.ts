@@ -1,4 +1,4 @@
-/** brief: the `model:` and `budget:` lines, `## Target files`, `## Hand test`, `## Parts`, `## Test slices`, the
+/** brief: the `model:` line, `## Target files`, `## Hand test`, `## Parts`, `## Test slices`, the
  *  target matcher, and briefCheck's output, excerpt modes, `--at`, and exit codes. */
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -10,9 +10,7 @@ import { test } from "node:test";
 
 import {
   BriefPartError,
-  budgetHoursOrNull,
   matchesTarget,
-  parseBudgetLine,
   parseHandTestBlock,
   parseModelLine,
   parseParts,
@@ -32,7 +30,7 @@ const SCRIPT = fileURLToPath(new URL("../briefCheck.ts", import.meta.url));
 // GIT_DIR (a hook) would point the `--at` and `--base` repos at another repo.
 for (const k of Object.keys(process.env)) if (k.startsWith("GIT_")) delete process.env[k];
 
-const HEADER = ["# quick-x — a sample", "", "class: R1 — operator, 2026-09-28", "model: sonnet — the brief names every file", "budget: 2h", ""];
+const HEADER = ["# quick-x — a sample", "", "class: R1 — operator, 2026-09-28", "model: sonnet — the brief names every file", ""];
 const TARGETS = ["## Target files", "", "- apps/mobile/src/chat/send.ts", "- `packages/core/src/chat/**`", "- .claude/build/notes.md — the hand-tester section", ""];
 const CLAIMS = [
   "## Hand test",
@@ -86,59 +84,6 @@ test("a model line not directly under the class line, or a second model line, is
   throwsPart(() => parseModelLine(brief({ header: ["class: R1 — o, 2026-09-28", "model: opus", "model: sonnet", ""] })), "model", "malformed", 3, /second `model:`/);
 });
 
-// ── budget line ───────────────────────────────────────────────────────────────
-
-test("the budget line parses whole and decimal hours, and summariseBrief returns them", () => {
-  const withBudget = (b: string) => brief({ header: ["class: R1 — o, 2026-09-28", "model: opus", b, ""] });
-  assert.deepEqual(parseBudgetLine(withBudget("budget: 3h")), { hours: 3, line: 3 });
-  assert.deepEqual(parseBudgetLine(withBudget("budget: 0.1h")), { hours: 0.1, line: 3 });
-  assert.deepEqual(parseBudgetLine(withBudget("budget: 2.5h")), { hours: 2.5, line: 3 });
-  assert.equal(summariseBrief(withBudget("budget: 2.5h")).budget, 2.5);
-  assert.equal(summariseBrief(brief({ header: ["class: R1 — o, 2026-09-28", "model: opus", ""] })).budget, null);
-});
-
-test("a missing, misshapen, zero, or misplaced budget line is refused by line", () => {
-  const noBudget = brief({ header: ["class: R1 — o, 2026-09-28", "model: opus", ""] });
-  throwsPart(() => parseBudgetLine(noBudget), "budget", "missing", null, /missing: no `budget: <n>h`/);
-  for (const bad of ["budget: 3", "budget: 0h", "budget: 3 hours"]) {
-    throwsPart(() => parseBudgetLine(brief({ header: ["class: R1 — o, 2026-09-28", "model: opus", bad, ""] })), "budget", "malformed", 3, /expected `budget: <n>h`/);
-    throwsPart(() => summariseBrief(brief({ header: ["class: R1 — o, 2026-09-28", "model: opus", bad, ""] })), "budget", "malformed", 3, /expected/);
-  }
-  throwsPart(
-    () => parseBudgetLine(brief({ header: ["class: R1 — o, 2026-09-28", "model: opus", "", "budget: 3h", ""] })),
-    "budget",
-    "malformed",
-    4,
-    /directly under the model line \(line 2\)/
-  );
-  throwsPart(
-    () => parseBudgetLine(brief({ header: ["class: R1 — o, 2026-09-28", "model: opus", "budget: 3h", "budget: 1h", ""] })),
-    "budget",
-    "malformed",
-    4,
-    /second `budget:`/
-  );
-});
-
-test("a budget too long to be a finite number is malformed, in every reader", () => {
-  const huge = `budget: 1${"0".repeat(400)}h`;
-  assert.equal(Number(/^budget: (\d+)h$/.exec(huge)![1]), Infinity);
-  const text = brief({ header: ["class: R1 — o, 2026-09-28", "model: opus", huge, ""] });
-  throwsPart(() => parseBudgetLine(text), "budget", "malformed", 3, /a finite number above 0/);
-  throwsPart(() => budgetHoursOrNull(text), "budget", "malformed", 3, /a finite number above 0/);
-  throwsPart(() => summariseBrief(text), "budget", "malformed", 3, /a finite number above 0/);
-  const longFraction = brief({ header: ["class: R1 — o, 2026-09-28", "model: opus", `budget: 1.${"5".repeat(400)}h`, ""] });
-  assert.ok(Math.abs(parseBudgetLine(longFraction).hours - 1.5556) < 1e-4, "a long fraction is finite and parses");
-});
-
-test("budgetHoursOrNull: the hours, null with no line, and a malformed or misplaced line throws", () => {
-  const head = (lines: string[]) => brief({ header: ["class: R1 — o, 2026-09-28", "model: opus", ...lines, ""] });
-  assert.equal(budgetHoursOrNull(head(["budget: 2.5h"])), 2.5);
-  assert.equal(budgetHoursOrNull(head([])), null);
-  throwsPart(() => budgetHoursOrNull(head(["budget: 0h"])), "budget", "malformed", 3, /above 0/);
-  throwsPart(() => budgetHoursOrNull(head(["", "budget: 3h"])), "budget", "malformed", 4, /directly under the model line/);
-});
-
 // ── target files ──────────────────────────────────────────────────────────────
 
 test("target files: entries parse, backticks and the why are stripped, blank lines pass", () => {
@@ -151,7 +96,7 @@ test("target files: a missing section, a non-entry line, and an empty section ar
     () => parseTargetFiles(brief({ targets: ["## Target files", "", "- apps/x.ts (new)", ""] })),
     "target-files",
     "malformed",
-    9,
+    8,
     /got: - apps\/x\.ts \(new\)/
   );
   throwsPart(() => parseTargetFiles(brief({ targets: ["## Target files", "", ""] })), "target-files", "malformed", null, /lists no file/);
@@ -197,23 +142,23 @@ test("hand test: a section heading inside a fence is never read as the section",
 
 test("hand test: none with claims, a claim without run or pass, and an empty section are refused", () => {
   const at = (lines: string[]) => brief({ hand: ["## Hand test", "", ...lines, ""] });
-  // The section's first body line is line 15 in `brief()`: 6 header + 6 target lines + heading + blank.
-  throwsPart(() => parseHandTestBlock(at(["none — doc only", "- H1 · x", "  - run: a", "  - pass: b"])), "hand-test", "malformed", 15, /`none —` and claims together/);
-  throwsPart(() => parseHandTestBlock(at(["- H1 · x", "  - pass: b"])), "hand-test", "malformed", 15, /H1 has no `  - run:/);
-  throwsPart(() => parseHandTestBlock(at(["- H1 · x", "  - run: a"])), "hand-test", "malformed", 15, /H1 has no `  - pass:/);
+  // The section's first body line is line 14 in `brief()`: 5 header + 6 target lines + heading + blank.
+  throwsPart(() => parseHandTestBlock(at(["none — doc only", "- H1 · x", "  - run: a", "  - pass: b"])), "hand-test", "malformed", 14, /`none —` and claims together/);
+  throwsPart(() => parseHandTestBlock(at(["- H1 · x", "  - pass: b"])), "hand-test", "malformed", 14, /H1 has no `  - run:/);
+  throwsPart(() => parseHandTestBlock(at(["- H1 · x", "  - run: a"])), "hand-test", "malformed", 14, /H1 has no `  - pass:/);
   throwsPart(() => parseHandTestBlock(at([])), "hand-test", "malformed", null, /no claim and no `none —/);
 });
 
 test("hand test: a repeated id, run, or needs line, a bad needs value, and a stray line are refused by line", () => {
   const at = (lines: string[]) => brief({ hand: ["## Hand test", "", ...lines, ""] });
   const ok = ["- H1 · x", "  - run: a", "  - pass: b"];
-  throwsPart(() => parseHandTestBlock(at([...ok, "- H1 · y", "  - run: a", "  - pass: b"])), "hand-test", "malformed", 18, /H1 used twice/);
-  throwsPart(() => parseHandTestBlock(at([...ok, "  - run: c"])), "hand-test", "malformed", 18, /second `run:`/);
-  throwsPart(() => parseHandTestBlock(at([...ok, "  - needs: stack", "  - needs: sim"])), "hand-test", "malformed", 19, /second `needs:`/);
-  throwsPart(() => parseHandTestBlock(at([...ok, "  - needs: stack, stack"])), "hand-test", "malformed", 18, /names `stack` twice/);
-  throwsPart(() => parseHandTestBlock(at([...ok, "  - needs: db"])), "hand-test", "malformed", 18, /under H1, expected/);
-  throwsPart(() => parseHandTestBlock(at(["a stray line"])), "hand-test", "malformed", 15, /expected `- H<k> ·/);
-  throwsPart(() => parseHandTestBlock(at(["- H0 · x", "  - run: a", "  - pass: b"])), "hand-test", "malformed", 15, /expected `- H<k> ·/);
+  throwsPart(() => parseHandTestBlock(at([...ok, "- H1 · y", "  - run: a", "  - pass: b"])), "hand-test", "malformed", 17, /H1 used twice/);
+  throwsPart(() => parseHandTestBlock(at([...ok, "  - run: c"])), "hand-test", "malformed", 17, /second `run:`/);
+  throwsPart(() => parseHandTestBlock(at([...ok, "  - needs: stack", "  - needs: sim"])), "hand-test", "malformed", 18, /second `needs:`/);
+  throwsPart(() => parseHandTestBlock(at([...ok, "  - needs: stack, stack"])), "hand-test", "malformed", 17, /names `stack` twice/);
+  throwsPart(() => parseHandTestBlock(at([...ok, "  - needs: db"])), "hand-test", "malformed", 17, /under H1, expected/);
+  throwsPart(() => parseHandTestBlock(at(["a stray line"])), "hand-test", "malformed", 14, /expected `- H<k> ·/);
+  throwsPart(() => parseHandTestBlock(at(["- H0 · x", "  - run: a", "  - pass: b"])), "hand-test", "malformed", 14, /expected `- H<k> ·/);
 });
 
 // ── the from-branch hand-test file ────────────────────────────────────────────
@@ -234,7 +179,7 @@ test("a --from-branch file that does not open with a pinned class line is refuse
 
 // ── parts and test slices ─────────────────────────────────────────────────────
 
-const P_HEADER = ["# quick-y — a two-part sample", "", "class: R1 — operator, 2026-09-28", "model: opus — P2 is a design choice", "budget: 3h", ""];
+const P_HEADER = ["# quick-y — a two-part sample", "", "class: R1 — operator, 2026-09-28", "model: opus — P2 is a design choice", ""];
 const P_TARGETS = ["## Target files", "", "- src/a.ts", "- src/b.ts", "- src/docs/", "- src/lib/**", ""];
 const P_HAND = ["## Hand test", "", "none — tooling only", ""];
 const P_PARTS = [
@@ -311,11 +256,10 @@ test("parts: a brief with no `## Parts` has one implicit P1 from the header mode
   assert.deepEqual(s.slices, []);
 });
 
-test("parts: a legacy brief with no ## Parts and no budget: parses unchanged, with one implicit opus part over its targets", () => {
+test("parts: a legacy brief with no ## Parts parses unchanged, with one implicit opus part over its targets", () => {
   const text = readFileSync(fileURLToPath(new URL("fixtures/legacy-brief.md", import.meta.url)), "utf8");
   const s = summariseBrief(text);
   assert.equal(s.model, "opus");
-  assert.equal(s.budget, null);
   assert.equal(s.targets!.length, 3);
   assert.deepEqual(s.claims.map((c) => c.id), ["H1", "H2"]);
   assert.equal(s.partsDeclared, false);
@@ -486,7 +430,7 @@ test("briefCheck prints class, model, target files, claims, parts, and slices; t
     writeFileSync(join(dir, "h.md"), FROM_BRANCH);
     const b = run([join(dir, "b.md")]);
     assert.equal(b.status, 0, b.stderr);
-    assert.equal(b.stdout, `class: R1\nmodel: sonnet\nbudget: 2h\ntarget-files: 3\nclaims: 2 (H1, H2)\n${IMPLICIT_LINES}`);
+    assert.equal(b.stdout, `class: R1\nmodel: sonnet\ntarget-files: 3\nclaims: 2 (H1, H2)\n${IMPLICIT_LINES}`);
     const h = run([join(dir, "h.md")]);
     assert.equal(h.status, 0, h.stderr);
     assert.equal(h.stdout, "class: R1\nclaims: 1 (H1)\n");
@@ -495,40 +439,25 @@ test("briefCheck prints class, model, target files, claims, parts, and slices; t
   });
 });
 
+test("briefCheck reads an older brief's `budget:` header line as nothing: same summary, exit 0, no budget key", () => {
+  withDir((dir) => {
+    for (const line of ["budget: 2h", "budget: 3"]) {
+      writeFileSync(join(dir, "b.md"), brief({ header: [...HEADER.slice(0, -1), line, ""] }));
+      const r = run([join(dir, "b.md")]);
+      assert.equal(r.status, 0, r.stderr);
+      assert.equal(r.stdout, `class: R1\nmodel: sonnet\ntarget-files: 3\nclaims: 2 (H1, H2)\n${IMPLICIT_LINES}`, line);
+      assert.equal(Object.hasOwn(JSON.parse(run([join(dir, "b.md"), "--json"]).stdout), "budget"), false, line);
+    }
+  });
+});
+
 test("briefCheck exits 1 naming the part and line on a malformed part, and 2 on an unknown flag", () => {
   withDir((dir) => {
     writeFileSync(join(dir, "b.md"), brief({ targets: ["## Target files", "", "* apps/x.ts", ""] }));
     const r = run([join(dir, "b.md")]);
     assert.equal(r.status, 1);
-    assert.match(r.stderr, /^briefCheck: target-files: line 9: expected/);
+    assert.match(r.stderr, /^briefCheck: target-files: line 8: expected/);
     assert.equal(run([join(dir, "b.md"), "--bogus"]).status, 2);
-  });
-});
-
-test("briefCheck refuses a missing or misshapen budget line by name, in every mode but --at", () => {
-  withDir((dir) => {
-    git(dir, "init", "-q", "-b", "main");
-    const noBudget = brief({ header: ["class: R1 — operator, 2026-09-28", "model: sonnet — why", ""] });
-    writeFileSync(join(dir, "b.md"), noBudget);
-    git(dir, "add", "b.md");
-    git(dir, "commit", "-q", "-m", "brief");
-    for (const mode of [[], ["--json"], ["--files", "P1"]]) {
-      const r = run(["b.md", ...mode], dir);
-      assert.equal(r.status, 1, `${mode.join(" ")}: ${r.stdout}`);
-      assert.match(r.stderr, /^briefCheck: budget: missing: no `budget: <n>h` line/);
-    }
-    const at = run(["b.md", "--at", "HEAD"], dir);
-    assert.equal(at.status, 0, at.stderr);
-    assert.match(at.stdout, /^model: sonnet\nbudget: none\n/m);
-    assert.equal(JSON.parse(run(["b.md", "--at", "HEAD", "--json"], dir).stdout).budget, null);
-
-    writeFileSync(join(dir, "b.md"), brief({ header: ["class: R1 — operator, 2026-09-28", "model: sonnet — why", "budget: 3", ""] }));
-    const bad = run(["b.md"], dir);
-    assert.equal(bad.status, 1);
-    assert.match(bad.stderr, /^briefCheck: budget: line 3: expected `budget: <n>h`/);
-
-    writeFileSync(join(dir, "b.md"), brief());
-    assert.equal(JSON.parse(run(["b.md", "--json"], dir).stdout).budget, 2);
   });
 });
 
@@ -552,12 +481,12 @@ test("briefCheck --at reads the old version, and a legacy first commit counts 0 
     git(dir, "commit", "-q", "-am", "amend brief: the parts");
 
     const head = run(["brief.md"], dir);
-    assert.equal(head.stdout, `class: R1\nmodel: sonnet\nbudget: 2h\ntarget-files: 3\nclaims: 2 (H1, H2)\n${IMPLICIT_LINES}`);
+    assert.equal(head.stdout, `class: R1\nmodel: sonnet\ntarget-files: 3\nclaims: 2 (H1, H2)\n${IMPLICIT_LINES}`);
     const at = run(["brief.md", "--at", first], dir);
     assert.equal(at.status, 0, at.stderr);
     assert.equal(
       at.stdout,
-      "class: R1\nmodel: none (legacy: no line)\nbudget: none\ntarget-files: 0 (legacy: no section)\nclaims: 0 (legacy: no section)\n" +
+      "class: R1\nmodel: none (legacy: no line)\ntarget-files: 0 (legacy: no section)\nclaims: 0 (legacy: no section)\n" +
         "parts: 0 (legacy: no model line or target files)\nslices: 0 (none)\n"
     );
     const json = JSON.parse(run(["brief.md", "--at", first, "--json"], dir).stdout);
@@ -590,7 +519,7 @@ function commitAt(dir: string, at: number, rel: string, text: string, msg: strin
   return gitAt(dir, at, "rev-parse", "HEAD").trim();
 }
 
-const SUMMARY = `class: R1\nmodel: sonnet\nbudget: 2h\ntarget-files: 3\nclaims: 2 (H1, H2)\n${IMPLICIT_LINES}`;
+const SUMMARY = `class: R1\nmodel: sonnet\ntarget-files: 3\nclaims: 2 (H1, H2)\n${IMPLICIT_LINES}`;
 
 test("briefCheck --base: a brief in the code repo is ok as the branch's first commit, and exit 1 as its second", () => {
   for (const late of [false, true]) {
@@ -685,7 +614,7 @@ test("briefCheck --at still refuses a malformed part at the old commit", () => {
     git(dir, "commit", "-q", "-m", "brief");
     const r = run(["brief.md", "--at", "HEAD"], dir);
     assert.equal(r.status, 1);
-    assert.match(r.stderr, /hand-test: line 15: H1 has no `  - pass:/);
+    assert.match(r.stderr, /hand-test: line 14: H1 has no `  - pass:/);
   });
 });
 
@@ -714,7 +643,7 @@ test("briefCheck refuses a claim whose run: is a test runner; a live command, a 
     writeFileSync(join(dir, "b.md"), brief({ hand }));
     const r = run([join(dir, "b.md")]);
     assert.equal(r.status, 1);
-    assert.match(r.stderr, /^briefCheck: hand-test: H1 \(line 15\) runs node --test — tests run in the checks and CI; [^\n]*write `none — <reason>`/);
+    assert.match(r.stderr, /^briefCheck: hand-test: H1 \(line 14\) runs node --test — tests run in the checks and CI; [^\n]*write `none — <reason>`/);
     writeFileSync(join(dir, "ok.md"), brief());
     assert.equal(run([join(dir, "ok.md")]).status, 0);
   });
@@ -730,7 +659,7 @@ test("briefCheck refuses a manifest claim with no exercise to run; one that runs
     writeFileSync(join(dir, "none.md"), brief({ hand: claim("") }));
     const none = run([join(dir, "none.md")], dir);
     assert.equal(none.status, 1);
-    assert.match(none.stderr, /^briefCheck: hand-test: H1 \(line 15\) runs the manifest with no exercise/);
+    assert.match(none.stderr, /^briefCheck: hand-test: H1 \(line 14\) runs the manifest with no exercise/);
     writeFileSync(join(dir, "flag.md"), brief({ hand: claim(" --no-exercise"), rest: exercise }));
     assert.equal(run([join(dir, "flag.md")], dir).status, 1);
     writeFileSync(join(dir, "live.md"), brief({ hand: claim(""), rest: exercise }));

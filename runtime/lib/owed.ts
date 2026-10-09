@@ -169,8 +169,6 @@ export interface BriefFacts {
   parts: Part[];
   /** The brief has a `## Parts` section: only then does `build:` owe `parts=`. */
   partsDeclared: boolean;
-  /** The brief's `budget:` hours at HEAD; null on `--from-branch`, with no line, or when unreadable. */
-  budget: number | null;
 }
 
 /** Everything a plan or the owed set reads, gathered once. Build it with `runContext`. */
@@ -339,7 +337,6 @@ function readBrief(
     model: null,
     parts: [],
     partsDeclared: false,
-    budget: null,
   };
   const line: "hand-test-block" | "brief" = fromBranch ? "hand-test-block" : "brief";
   if (fromBranch && ledger.brief !== null) {
@@ -373,10 +370,7 @@ function readBrief(
     facts.model = head.model;
     facts.parts = head.parts;
     facts.partsDeclared = head.partsDeclared;
-    if (!fromBranch) {
-      facts.targets = head.targets ?? [];
-      facts.budget = head.budget;
-    }
+    if (!fromBranch) facts.targets = head.targets ?? [];
   } catch (err) {
     if (!(err instanceof BriefPartError)) throw err;
     failures.push(`${line}: ${shown} at HEAD — ${err.message} (node ~/.agent-build/runtime/briefCheck.ts ${facts.store ? join(loc!.cwd, path) : path})`);

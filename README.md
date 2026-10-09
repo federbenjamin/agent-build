@@ -17,7 +17,15 @@ wants a whole unit of work carried through by one command, under their own branc
 
 ## Install
 
-One paste, with Claude Code installed:
+What a run needs on PATH:
+
+- [Claude Code](https://code.claude.com).
+- `git`.
+- `node` 22.18 or newer: the runtime is TypeScript that `node` runs directly.
+- [`gh`](https://cli.github.com), logged in (`gh auth login`): the built-in push, PR and merge steps use it.
+- `jq`: the no-push guard reads its hook input with it, and refuses a subagent's command while it is missing.
+
+One paste, with those installed:
 
 ```
 git clone https://github.com/federbenjamin/agent-build ~/agent-build && ~/agent-build/install.sh
@@ -61,7 +69,7 @@ holds the row and the file together.
 ## Features
 
 - **One command from a request to a merged PR.** `/build <request>` writes the brief, builds each part with its own agent, reviews the diff with a wave of readers and up to four fix rounds, hand-tests the result, and ships it through your repo's own push, PR and merge commands.
-- **Your commands, mapped once.** Each repo names its install, checks, tests, push, PR and merge commands in `.claude/build-steps.toml`; a repo without one runs on the built-in defaults (`git push`, `gh pr create`, `gh pr merge`) and the run's record says so.
+- **Your commands, mapped once.** Each repo names its install, checks, tests, push, PR and merge commands in `.claude/build-steps.toml`; a repo without one runs on the built-in defaults (`npm test`, `git push`, `gh pr create`, `gh pr merge`) and the run's record says so.
 - **Twelve agents with one job each.** Brief writer, builders, reviewers, fixers, test author, hand tester and more, spawned as `agent-build:<name>`, each with its own model and context.
 - **A subagent never pushes.** A hook refuses a push or a PR open, ready, edit or merge from any subagent, in the built-in `git`/`gh` forms and in your repo's own steps, and logs each refusal.
 - **Codex is optional.** With the `codex` CLI on PATH, Codex writes plain test slices and pairs a second review with Claude's; without it, every job runs on Claude.
@@ -77,10 +85,18 @@ In a Claude Code session, in a worktree of the repo the work belongs to, with th
 
 Only a typed `/build` runs the skill. It brief-writes, builds, reviews, hand-tests and ships from that one session, and stops only for what the request and the repo's rules do not settle.
 
+Keep the request file outside the worktree (an absolute path anywhere else), so it never rides into
+the branch. To run without a terminal session, pass the same line as the prompt of a headless run,
+from the worktree; Claude Code expands a `/skill` at the start of a `-p` prompt:
+
+```
+claude -p --permission-mode auto "/build <path to the request file>"
+```
+
 ### Permission mode
 
-/build runs `git`, `pnpm`, and `node` at every step, and its agents inherit the session's permission
-mode (a plugin agent's own `permissionMode` is ignored). Run it in `auto` mode, or in `acceptEdits`
+/build runs `git`, `gh`, `node`, and the commands your build steps name at every step, and its
+agents inherit the session's permission mode (a plugin agent's own `permissionMode` is ignored). Run it in `auto` mode, or in `acceptEdits`
 with Bash allowed. In `default` mode every command prompts.
 
 ## Configuration
@@ -91,6 +107,13 @@ A repo maps each step the flow names to its own command in `.claude/build-steps.
 `node ~/.agent-build/runtime/steps.ts <repo>` prints the resolved table, and
 `node ~/.agent-build/runtime/steps.ts --template <name>` prints the file a new repo starts from
 (every step commented out, so each stays on its fallback until the repo fills it in).
+
+A repo with no steps file runs on the fallbacks alone. Its `tests` and `checks` steps run
+`npm test` when its `package.json` has a test script (`npm init`'s placeholder does not count), and
+nothing otherwise. Its `install` step runs `pnpm install --frozen-lockfile` with a `pnpm-lock.yaml`,
+`npm ci` with a `package-lock.json`, and nothing otherwise (a yarn or bun repo names its own). The PR opens as a draft with the title and body the run writes. Once the ship
+gate passes, the PR is marked ready and set to auto-merge, or merged at once where the repo does not
+allow auto-merge (a new GitHub repo does not). A repo's own `merge` step replaces all of that.
 
 ### Where files go
 
@@ -139,10 +162,9 @@ A launcher that wants to follow a build learns of its milestones through `BUILD_
 
 ### What a run costs
 
-Time, from this repo's own shipped runs ([BRIEF.md](skills/build/BRIEF.md)'s budget table: the median wall hours from the
-brief commit to the PR opening, over the 20 newest): 0.35h for a small change (S), 0.70h for a
-medium one (M), 2.33h for an extra-large one (XL). The budgets a brief starts from are 0.5h, 1h,
-2.5h, and 4h by size.
+Time, from this repo's own shipped runs (the median wall hours from the brief commit to the PR
+opening, over the 20 newest as of 2026-10-06): 0.35h for a small change (S), 0.70h for a medium
+one (M), 2.33h for an extra-large one (XL).
 
 Spawns: one builder per part of the unit, two to five readers at the review wave depending on the
 risk class, then up to four fix rounds, each with a fixer, a confirming read, and a hand tester.

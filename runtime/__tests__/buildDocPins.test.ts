@@ -130,7 +130,7 @@ function taggedBlocks(text: string): { tag: BlockTag; body: string }[] {
 }
 
 /**
- * A `## Parts` example wrapped in the least brief `briefCheck.ts` takes: the header model is the
+ * A `## Parts` example wrapped in the least brief `summariseBrief` takes: the header model is the
  * strongest part's, `## Target files` lists every part's `files:` entry, `## Deliverables` holds as
  * many bullets as the highest position a part names, and the `## Test slices` example rides along.
  */
@@ -141,7 +141,6 @@ function wrapPartsExample(parts: string, slices: string | null): string {
   const last = Math.max(...field("deliverables").flatMap((v) => v.split(",").map(Number)));
   return [
     `model: ${strongestModel(models)} — the doc pin's wrapper`,
-    "budget: 1h",
     "",
     "## Target files",
     "",
@@ -852,15 +851,7 @@ test("BRIEF: parts pair deliverables by position, the model is picked per part, 
   assert.match(parts, /`PART_MAX_LINES` is a planning number, never a gate/);
   assert.match(step(brief, 2), /\*\*an `amend brief:` adds a deliverable only at the end of both lists\*\*/);
   assert.match(step(brief, 1), /\*\*The check applies per part\*\*/);
-  const floor = /`(build: model=session \| agent=none \| sha=<head after your edits> \| started=<iso of your first edit>)`, with no `parts=`/.exec(step(brief, 1));
-  assert.ok(floor, "BRIEF step 1 gives the floor check's build line");
-  const floorLine = floor[1]!.replace("<head after your edits>", "aaaaaaa").replace("<iso of your first edit>", "2026-10-06T08:00:00Z");
-  assert.deepEqual(parseLedger(`class: R1 — o, 2026-09-28\nflow: 2\n${floorLine}\n`).build, {
-    model: "session",
-    agents: [],
-    sha: "aaaaaaa",
-    started: "2026-10-06T08:00:00Z",
-  });
+  assert.match(step(brief, 1), /`build: model=session \| agent=none \| sha=<head after your edits>`, with no `parts=`/);
   assert.match(step(brief, 3), /Size check: a part over `PART_MAX_LINES` is cut, or the brief says why it cannot be/);
   assert.doesNotMatch(brief, /Scope check \(one PR's worth\)/);
   assert.match(step(brief, 4), /`opus — P2 \(design choice\); P1, P3 sonnet`/);

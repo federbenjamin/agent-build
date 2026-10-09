@@ -209,9 +209,8 @@ export interface Ledger {
   fromBranch: string | null;
   /** As `brief`. */
   handTestBlock: string | null;
-  /** `parts` is set only when the line has `parts=`; the gate checks it against the brief's parts.
-   *  `started` (UTC ISO, the first builder spawn) only when the line has `started=`. */
-  build: { model: FixModel | "session"; agents: string[]; sha: string; parts?: BuildPart[]; started?: string } | null;
+  /** `parts` is set only when the line has `parts=`; the gate checks it against the brief's parts. */
+  build: { model: FixModel | "session"; agents: string[]; sha: string; parts?: BuildPart[] } | null;
   /** The run's base, from `freshen:`'s `base=`. A script's `--base` flag only overrides it. */
   base: string | null;
   /** The run's branch, from `freshen:`'s `branch=`; null on a ledger written without it. */
@@ -267,8 +266,7 @@ const LEFTOVERS_TO = /^([A-Z][A-Z0-9]*-\d+|pr-body)$/;
 const LEFTOVERS_SCOPE = /^(session-[0-9a-f]{8}|plan-[A-Za-z0-9._-]+)$/;
 const HAND_TEST_SKIPPED = /^skipped\s+[—-]+\s+no claims$/;
 const FROM_BRANCH_VERIFIER = "N/A (from-branch, no brief)";
-const UTC_ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
-const BUILD_PART =/^(P[1-9]\d*):(opus|sonnet|session):(none|[A-Za-z0-9_-]+(?:\+[A-Za-z0-9_-]+)*)$/;
+const BUILD_PART = /^(P[1-9]\d*):(opus|sonnet|session):(none|[A-Za-z0-9_-]+(?:\+[A-Za-z0-9_-]+)*)$/;
 
 /** The move a line name is, or null. `hand-test-3` is `hand-test-<n>`. */
 export function ledgerMoveOf(name: string): LedgerMove | null {
@@ -286,6 +284,7 @@ const KEYS: Record<Exclude<LedgerMove, "class" | "banked">, { need: LedgerKey[];
     "from-branch": { need: [] },
     "hand-test-block": { need: [] },
     steps: { need: [] },
+    // `started=` is read by nothing: kept so an older ledger that carries it still parses.
     build: { need: ["model", "agent", "sha"], may: ["parts", "started"] },
     freshen: { need: ["base", "sha"], may: ["branch"] },
     wave: { need: ["sha"] },
@@ -332,10 +331,6 @@ function splitLine(move: string, kind: Exclude<LedgerMove, "class" | "banked">, 
     }
     if (Object.hasOwn(fields, key)) fail(move, `has two \`${key}=\` fields`);
     if (value.length === 0) fail(move, `\`${key}=\` is empty`);
-    // Before the space check: `started=2026-10-06 08:00` is a wrong shape, so the message names the shape.
-    if (key === "started" && (!UTC_ISO.test(value) || Number.isNaN(Date.parse(value)))) {
-      fail(move, `started=${value} is not UTC ISO \`YYYY-MM-DDTHH:MM:SSZ\` — write \`date -u +%Y-%m-%dT%H:%M:%SZ\``);
-    }
     if (/\s/.test(value)) fail(move, `\`${key}=${value}\` holds a space`);
     if ((key === "sha" || key === "from" || key === "measured-at") && !SHA.test(value)) {
       fail(move, `${key}=${value} is not a git sha`);
@@ -665,7 +660,6 @@ export function parseLedger(text: string): Ledger {
         }
         ledger.build = { model, agents, sha: line.fields.sha! };
         if (line.fields.parts !== undefined) ledger.build.parts = buildPartsOf(line.fields.parts);
-        if (line.fields.started !== undefined) ledger.build.started = line.fields.started;
         break;
       }
       case "freshen":

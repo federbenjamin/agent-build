@@ -6,7 +6,7 @@
  */
 
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -398,7 +398,6 @@ test("build: a round table.json holds re-builds at its stored head; a new round 
   assert.equal(rounds()["1"]!.head, "aaaaaaa", "a re-built round keeps its range");
   assert.deepEqual(again.err, ["note: table.json holds round 1 — re-built at its head aaaaaaa; pass --head <sha> to build it elsewhere"]);
   assert.match(again.out[0]!, /^round 1 · head aaaaaaa · /);
-  assert.equal(again.out.at(-1), "budget: unenforced (no started=)", "a --from-branch run has no brief and no budget");
 
   assert.equal((await build("--round", "1", "--head", "ddddddd")).code, 0);
   assert.equal(rounds()["1"]!.head, "ddddddd", "--head overrides the stored head");
@@ -414,122 +413,6 @@ test("build: a round table.json holds re-builds at its stored head; a new round 
   assert.equal(rounds().final!.head, HEAD_SHA, "SHIP re-builds `final` after a later commit, at the new head");
   // The ledger names no `branch=`, so the build never asked git for the branch: `exec` throws on it.
   rmSync(dir, { recursive: true });
-});
-
-test("build: with started= and the brief's budget: the last line is the verdict; a future start or a malformed line exits 2 and writes nothing", async () => {
-  const dir = tempDir();
-  const exec = (_cmd: string, args: string[]): string => {
-    if (args.join(" ") === "rev-parse --show-toplevel") return `${dir}\n`;
-    if (args.join(" ") === "rev-parse HEAD") return "ccccccc\n";
-    throw new Error(`unexpected git ${args.join(" ")}`);
-  };
-  const build = async () => {
-    const out: string[] = [];
-    const err: string[] = [];
-    let code = -1;
-    await main(["build", "--run-dir", dir, "--round", "1"], { cwd: dir, exec, out: (l) => out.push(l), err: (l) => err.push(l) }, (c) => {
-      code = c;
-    });
-    return { code, out, err };
-  };
-  const ledger = (started: string) =>
-    writeFileSync(
-      join(dir, "ship.md"),
-      `class: R1 — operator, 2026-09-28\nflow: 2\nbrief: docs/b.md\nbuild: model=sonnet | agent=a1 | sha=aaaaaaa | started=${started}\n`
-    );
-  const brief = (budget: string) => {
-    mkdirSync(join(dir, "docs"), { recursive: true });
-    writeFileSync(join(dir, "docs", "b.md"), `class: R1 — o, 2026-09-28\nmodel: sonnet\n${budget}\n\n## Target files\n\n- src/a.ts\n`);
-  };
-  const tables = () => ["table.json", "table-1.md"].filter((f) => existsSync(join(dir, f)));
-  try {
-    brief("budget: 2h");
-    ledger("2999-01-01T00:00:00Z");
-    const future = await build();
-    assert.equal(future.code, 2);
-    assert.match(future.err[0]!, /^reviewTable build: budgetVerdict: started=2999-01-01T00:00:00Z is later than now/);
-    assert.deepEqual(tables(), [], "a refused start writes no table");
-
-    brief("budget: 2");
-    ledger("2020-01-01T00:00:00Z");
-    const malformed = await build();
-    assert.equal(malformed.code, 2);
-    assert.match(malformed.err[0]!, /^reviewTable build: docs\/b\.md: budget: line 3: expected `budget: <n>h`/);
-    assert.deepEqual(tables(), [], "a malformed budget line writes no table");
-
-    brief("budget: 2h");
-    ledger(new Date(Date.now() - 30 * 60_000).toISOString());
-    const ok = await build();
-    assert.equal(ok.code, 0, ok.err.join("\n"));
-    assert.match(ok.out[0]!, /^round 1 · head ccccccc · /);
-    assert.equal(ok.out.at(-1), "budget: 0.5h of 2h — ok");
-
-    ledger("2020-01-01T00:00:00Z");
-    const over = await build();
-    assert.equal(over.code, 0, over.err.join("\n"));
-    assert.match(over.out.at(-1)!, /^budget: \d+\.\dh of 2h — over: spawn nothing$/);
-    assert.deepEqual(tables(), ["table.json", "table-1.md"], "an over verdict still writes the table");
-
-    brief("");
-    const noLine = await build();
-    assert.equal(noLine.code, 0, noLine.err.join("\n"));
-    assert.equal(noLine.out.at(-1), "budget: unenforced (no budget: line)");
-  } finally {
-    rmSync(dir, { recursive: true });
-  }
-});
-
-test("build: the budget line's time is sampled after the table is written, so a limit crossed during the build prints over", async () => {
-  const dir = tempDir();
-  const exec = (_cmd: string, args: string[]): string => {
-    if (args.join(" ") === "rev-parse --show-toplevel") return `${dir}\n`;
-    if (args.join(" ") === "rev-parse HEAD") return "ccccccc\n";
-    throw new Error(`unexpected git ${args.join(" ")}`);
-  };
-  const started = Date.parse("2026-10-06T00:00:00Z");
-  writeFileSync(
-    join(dir, "ship.md"),
-    "class: R1 — operator, 2026-09-28\nflow: 2\nbrief: docs/b.md\nbuild: model=sonnet | agent=a1 | sha=aaaaaaa | started=2026-10-06T00:00:00Z\n"
-  );
-  mkdirSync(join(dir, "docs"));
-  writeFileSync(join(dir, "docs", "b.md"), "class: R1 — o, 2026-09-28\nmodel: sonnet\nbudget: 2h\n\n## Target files\n\n- src/a.ts\n");
-  // The clock reads 1.9h until this build writes table.json, then 2.1h: the limit falls inside the command.
-  const json = join(dir, "table.json");
-  const mark = Date.parse("2001-01-01T00:00:00Z");
-  const written = () => existsSync(json) && statSync(json).mtimeMs > mark;
-  const RealDate = Date;
-  class ClockDate extends RealDate {
-    constructor(...args: [] | [string | number | Date]) {
-      super(args.length === 0 ? started + (written() ? 2.1 : 1.9) * 3_600_000 : args[0]);
-    }
-  }
-  const build = async () => {
-    const out: string[] = [];
-    const err: string[] = [];
-    let code = -1;
-    globalThis.Date = ClockDate as DateConstructor;
-    try {
-      await main(["build", "--run-dir", dir, "--round", "1"], { cwd: dir, exec, out: (l) => out.push(l), err: (l) => err.push(l) }, (c) => {
-        code = c;
-      });
-    } finally {
-      globalThis.Date = RealDate;
-    }
-    return { code, out, err };
-  };
-  try {
-    const fresh = await build();
-    assert.equal(fresh.code, 0, fresh.err.join("\n"));
-    assert.equal(fresh.out.at(-1), "budget: 2.1h of 2h — over: spawn nothing", "a new round's table");
-
-    utimesSync(json, new Date("2000-01-01T00:00:00Z"), new Date("2000-01-01T00:00:00Z"));
-    const rebuilt = await build();
-    assert.equal(rebuilt.code, 0, rebuilt.err.join("\n"));
-    assert.match(rebuilt.err[0]!, /^note: table\.json holds round 1/);
-    assert.equal(rebuilt.out.at(-1), "budget: 2.1h of 2h — over: spawn nothing", "a re-built round's table");
-  } finally {
-    rmSync(dir, { recursive: true });
-  }
 });
 
 test("build: a tree on another branch than the ledger's branch= exits 2 with the message and writes nothing; its own branch builds", async () => {

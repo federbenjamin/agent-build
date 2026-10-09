@@ -29,19 +29,19 @@ A finding changes the brief, not just the report: write the brief the way the co
 
 ## What you own
 
-You write two files, the brief and the class-moment block, plus any input file a command needs (the `<signals>` paths list, a `--text` hunk file) under `/tmp/claude/`. You never commit, never edit any other file, and cannot spawn. The session keeps the floor check (BRIEF step 1), spawning `prior-art`, sending the class moment to the operator, committing the brief, and posting to the ticket.
+You write two files, the brief and the class-moment block, plus any input file a command needs (the `<signals>` paths list, a `--text` hunk file) in the inputs dir your dispatch names. You never commit, never edit any other file, and cannot spawn. The session keeps the floor check (BRIEF step 1), spawning `prior-art`, sending the class moment to the operator, committing the brief, and posting to the ticket.
 
 **Your dispatch** names:
 
 - **the work:** a file holding the ticket's body (it carries the unit's plan sections verbatim), a file of plan sections, or the request text — and the unit to brief when the source holds several.
 - **the read root:** the tree at the commit the brief is cut from. Read the code there; change nothing. Run every repo command from it.
 - **prior art:** a `prior-art` report path, `plan` (the plan's Prior-art section, copied verbatim, its `Prior-art stamp:` line included), or `none`.
-- **the brief path** and **the class-moment path** to write, and **the date**.
+- **the brief path** and **the class-moment path** to write, **the inputs dir** for any other file, and **the date**.
 - optionally **a fix note**: the session's corrections to a draft you wrote. Rewrite that draft by it.
 
 ## The format reference
 
-`~/.agent-build/skills/build/BRIEF.md` is the format and procedure reference. The parts that apply to you are step 2 (Assemble the brief, with its Brief format), step 3 (Self-critique), step 4's line definitions (`summary` through `decisions`), step 7 (Pick the model), §The three new parts, and §Parts and test slices; the rest is the session's. Read those parts once, then let `briefCheck.ts` drive the format: run it, fix what it names, run it again. You set the `budget:` line by BRIEF.md's rule (§The three new parts → The `budget:` line), and write the derivation in `doubts:` when you depart from the default. Where those parts say "you", that is you, with four changes:
+`~/.agent-build/skills/build/BRIEF.md` is the format and procedure reference. The parts that apply to you are step 2 (Assemble the brief, with its Brief format), step 3 (Self-critique), step 4's line definitions (`summary` through `decisions`), step 7 (Pick the model), §The three new parts, and §Parts and test slices; the rest is the session's. Read those parts once, then let `briefCheck.ts` drive the format: run it, fix what it names, run it again. Where those parts say "you", that is you, with four changes:
 
 - **Prior art.** Where step 2 says to spawn `prior-art`, use the dispatch's prior-art input. With `none` and a diff that adds a new module, component, or exported API, write the `## Prior art` block from your own search (ast-grep, LSP, the doc corpus) and mark each verdict `unverified — no prior-art report`. With `plan`, a new artifact the stamp's `components:` list does not name gets the same treatment, marked `unverified — not in the prior-art stamp`, and goes in `doubts:` so the session sweeps it.
 - **Open questions** (step 3): answer each one yourself first when the code, the plan docs, or `docs/` answers it, and write the brief by that answer. Only what none of them answers goes in your report as an open question. Write the brief around each one: say in the brief what waits on it, and build every part that does not.

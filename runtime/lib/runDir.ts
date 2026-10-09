@@ -1,7 +1,7 @@
 /**
  * The run dir's files as the table reads them: which files in a run dir, or in one of its
  * `stage-<key>/` folders, are reader files; everything one round's intake reads (`gatherRound`,
- * `resolveTargets`) and the brief's wall budget (`briefBudgetHours`); and the hand-test output files a claim names. The table script, the gate's
+ * `resolveTargets`); and the hand-test output files a claim names. The table script, the gate's
  * replay of each round, and telemetry all read through here, so none of them re-derives a file set.
  *
  * A reader file is `<reader>.md`, or `<reader>-<k>.md` for slice `k` of a split read, where
@@ -14,7 +14,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-import { BriefPartError, budgetHoursOrNull, matchesTarget, parseTargetFiles } from "./brief.ts";
+import { BriefPartError, matchesTarget, parseTargetFiles } from "./brief.ts";
 import { type ExecFn, gitOut } from "./gitOps.ts";
 import type { Ledger } from "./ledger.ts";
 import { briefLocation } from "./repoId.ts";
@@ -127,11 +127,12 @@ export function resolveTargets(
     }
     return (p) => changed.has(p.replace(/^\.\//, ""));
   }
-  const read = readBrief(ledger, repo, opts);
-  if (read === null) return () => false;
-  const { loc, text } = read;
+  if (ledger.brief === null) return () => false;
+  const loc = briefLocation(ledger.brief, repo, opts);
+  const path = join(loc.cwd, loc.path);
+  if (!existsSync(path)) throw new Error(`the brief ${ledger.brief} is not in ${loc.cwd}`);
   try {
-    const targets = parseTargetFiles(text);
+    const targets = parseTargetFiles(readFileSync(path, "utf8"));
     // A brief in the store is no path of the code repo, so only a brief in the tree is left out.
     const brief = loc.store ? null : loc.path;
     return (p) => p.replace(/^\.\//, "") !== brief && matchesTarget(p, targets);
@@ -140,33 +141,6 @@ export function resolveTargets(
       opts.note?.(`note: ${ledger.brief} has no \`## Target files\`; no file is a target`);
       return () => false;
     }
-    throw new Error(`${ledger.brief}: ${(e as Error).message}`);
-  }
-}
-
-/** The ledger's `brief:` file as the working tree (or the store dir) holds it; null when the ledger
- *  names none. Throws when the file is not there. */
-function readBrief(
-  ledger: Ledger,
-  repo: string,
-  opts: { exec?: ExecFn }
-): { loc: ReturnType<typeof briefLocation>; text: string } | null {
-  if (ledger.brief === null) return null;
-  const loc = briefLocation(ledger.brief, repo, opts);
-  const path = join(loc.cwd, loc.path);
-  if (!existsSync(path)) throw new Error(`the brief ${ledger.brief} is not in ${loc.cwd}`);
-  return { loc, text: readFileSync(path, "utf8") };
-}
-
-/** The brief's `budget: <n>h`, read from the file `resolveTargets` reads; null on a `--from-branch`
- *  run, a ledger with no `brief:`, or a brief with no `budget:` line. Throws on a malformed line. */
-export function briefBudgetHours(ledger: Ledger, repo: string, opts: { exec?: ExecFn } = {}): number | null {
-  if (ledger.fromBranch !== null) return null;
-  const read = readBrief(ledger, repo, opts);
-  if (read === null) return null;
-  try {
-    return budgetHoursOrNull(read.text);
-  } catch (e) {
     throw new Error(`${ledger.brief}: ${(e as Error).message}`);
   }
 }

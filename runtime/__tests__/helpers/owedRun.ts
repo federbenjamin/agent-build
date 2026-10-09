@@ -66,7 +66,6 @@ export function briefText(opts: { model?: string; claims?: string; cls?: string 
   return [
     `class: ${opts.cls ?? "R1"} — operator, 2026-09-28`,
     `model: ${opts.model ?? "sonnet"} — the brief names every file`,
-    "budget: 2h",
     "",
     "## Target files",
     "",

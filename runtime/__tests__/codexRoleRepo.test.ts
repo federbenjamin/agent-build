@@ -35,7 +35,15 @@ test("a repository role keeps its pins and prompt body without copying frontmatt
       effort: "xhigh",
       instructions: `${CODEX_PREAMBLE}\n\n# Role\n\nRead the diff.\n`,
       projectDocs: false,
+      sandbox: null,
     });
+    writeRepoRole(repo, {
+      name: "brief-writer",
+      codexModel: "gpt-5.6-sol",
+      codexReasoningEffort: "xhigh",
+      codexSandboxMode: "workspace-write",
+    });
+    assert.equal(roleFromRepo("brief-writer", repo)?.sandbox, "workspace-write");
   });
 });
 

@@ -6,30 +6,37 @@
 #
 #   no-push-guard.sh <plugin root>      stdin: the hook input
 #
-# Two matches, in order:
+# Two matches, in order, each on a command segment's program slot:
 #   1. Built-in forms: `git push` (not `git stash push`, `git help push`, nor a `git commit` whose
-#      message holds the word), `gh pr create|ready|merge|edit|close|reopen|lock|unlock`, a `gh api`
-#      with a method or field flag.
+#      message holds the word), `gh pr create|ready|merge|edit|close|reopen|lock|unlock`,
+#      `gh repo create … --push`, a `gh api` with a method or field flag.
 #   2. Only when 1 misses and a segment runs a script runner (pnpm, npm, npx, yarn, bun, tsx, node):
 #      the repo's own ship steps, `push`, `pr_open` and `merge` from `<root>/runtime/steps.ts <cwd>
 #      --json`, each matched by its last token in a runner segment (`pnpm pr:merge`, `pnpm run
 #      pr:merge`). A step whose command is a plain git/gh form is already covered by 1. A non-zero
 #      exit from steps.ts (a public repo with no store dir) fails open.
 # Accepted gaps: a repo script that is not a step (a `pnpm pr:ready`); a ship script run by
-# path (`tsx scripts/push.ts`); variable indirection (`X=git; $X push`): the guard matches command
-# TEXT, never evaluated values. Deliberate over-blocks: `git log --grep push` (a bare `push`
-# token), `gh pr list --search create`, a read-only `gh api graphql -f query=…` (a field flag). A subagent that hits one reports to its spawning session,
-# which runs the command itself; there is no escape hatch.
+# path (`tsx scripts/push.ts`); variable indirection (`X=git; $X push`) and ANSI-C quoting
+# (`$'\x67it' push`): the guard matches command TEXT, never evaluated values. Deliberate
+# over-blocks: `git log --grep push` (a bare `push` token), `gh pr list --search create`, a
+# read-only `gh api graphql -f query=…` (a field flag), `gh repo create --push=false`. A subagent
+# that hits one reports to its spawning session, which runs the command itself; there is no
+# escape hatch.
 #
-# Normalization, then a match per command segment, per WHOLE token:
-#   1. Quote characters and backslashes are DELETED (bash's quote and escape removal join
-#      fragments: `g''i''t push` and `g\it push` both run git).
-#   2. Literal `${IFS}`/`$IFS` become a space, as the shell would expand them.
-#   3. Delimiters and substitution syntax become segment breaks, so `git push;`, `$(git push)`,
-#      a backticked, subshelled or chained form each put the real command at a segment head.
-#   4. Per segment, transparent prefixes are stripped (env, sudo, `bash -c`, `X=1`), then the
-#      tokens are SCANNED: a keyword matches as its own token anywhere, never by position
-#      relative to a flag, so no flag list can be incomplete (`gh -u x pr create` blocks).
+# Segments come from a small shell lexer (LEXER below, awk), so text that is only data never
+# reaches a program slot:
+#   1. Quotes and backslashes are removed and the pieces of a word joined, as bash does
+#      (`g''i''t push` and `g\it push` both run git). Whitespace inside quotes stays inside its
+#      word, so `echo "done; gh pr merge"` is one `echo` segment and `"git push"` is one word.
+#   2. An unquoted `${IFS}`/`$IFS` splits words, as the shell would expand it.
+#   3. Unquoted `;`, `&`, `|`, `(`, `)`, `{`, `}` and newlines end a segment; a `$(…)` or
+#      backticked substitution, in or out of double quotes, is lexed as commands of its own.
+#   4. A heredoc body is data: skipped whole under a quoted delimiter (`<<'EOF'`), and only its
+#      substitutions are lexed under a bare one. A `#` comment is skipped.
+#   5. Per segment, transparent prefixes are stripped (env, sudo, `X=1`); the script of
+#      `bash -c '<script>'` or `eval <words>` is lexed again as commands. Then the tokens are
+#      SCANNED: a keyword matches as its own token anywhere, never by position relative to a
+#      flag, so no flag list can be incomplete (`gh -u x pr create` blocks).
 #
 # Log: one line per firing in a subagent (time, blocked|passed, agent type, session) at
 # ${NO_PUSH_GUARD_LOG:-~/.local/state/agent-build/hooks/no-push-guard.log}; read it back with
@@ -63,12 +70,126 @@ log() {
   { mkdir -p "$(dirname "$LOG")" && printf '%s %s %s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$AGENT_TYPE" "$SESSION" >>"$LOG"; } 2>/dev/null || true
 }
 
-NORM=$(printf '%s' "$CMD" \
-  | tr -d '"' | tr -d "'" | tr -d '\\' \
-  | sed -e 's/\${IFS}/ /g' -e 's/\$IFS/ /g' \
-  | tr ';&|(){}`' '\n' \
-  | tr '\t' ' ' | tr -s ' ')
+# In a lexed segment: a quoted space or tab (QSP), a quoted newline (QNL); words are split by ' '.
+QSP=$'\002'
+QNL=$'\001'
+NL=$'\n'
+# strip_prefixes output that holds a `bash -c` / `eval` script to lex again.
+INNER=$'\004'
 
+# stdin: shell text. stdout: one command segment per line, its words joined by single spaces.
+# shellcheck disable=SC2016
+LEXER='
+BEGIN { QSP = "\002"; QNL = "\001"; SEP = "\003" }
+{ text = NR == 1 ? $0 : text "\n" $0 }
+END { lex(text) }
+function quoted(c) { return (c == " " || c == "\t") ? QSP : (c == "\n" ? QNL : c) }
+function addword(seg, w) { return w == "" ? seg : (seg == "" ? w : seg " " w) }
+# The ")" that closes the "(" at t[i], skipping quoted text; past the end when unclosed.
+function close_paren(t, i,   n, depth, c, q) {
+  n = length(t); depth = 0; q = ""
+  for (; i <= n; i++) {
+    c = substr(t, i, 1)
+    if (q == "\047") { if (c == "\047") q = ""; continue }
+    if (c == "\\") { i++; continue }
+    if (q == "\"") { if (c == "\"") q = ""; continue }
+    if (c == "\047" || c == "\"") q = c
+    else if (c == "(") depth++
+    else if (c == ")" && --depth == 0) return i
+  }
+  return n + 1
+}
+# The backtick that closes the one at t[i]; past the end when unclosed.
+function close_tick(t, i,   n, c) {
+  n = length(t)
+  for (i++; i <= n; i++) {
+    c = substr(t, i, 1)
+    if (c == "\\") { i++; continue }
+    if (c == "`") return i
+  }
+  return n + 1
+}
+# Lex the substitutions in s (a bare-delimiter heredoc line); the rest is data.
+function subs(s,   n, i, c, e) {
+  n = length(s)
+  for (i = 1; i <= n; i++) {
+    c = substr(s, i, 1)
+    if (c == "\\") { i++; continue }
+    if (c == "$" && substr(s, i + 1, 1) == "(") { e = close_paren(s, i + 1); lex(substr(s, i + 2, e - i - 2)); i = e }
+    else if (c == "`") { e = close_tick(s, i); lex(substr(s, i + 1, e - i - 1)); i = e }
+  }
+}
+# Skip the bodies of the pending heredocs (pend: flags+delimiter entries) that start after the
+# newline at t[i]; returns the index of the newline that ends the last delimiter line.
+function heredocs(t, i, pend,   n, m, k, P, bare, strip, delim, j, line) {
+  n = length(t)
+  m = split(pend, P, SEP)
+  for (k = 1; k <= m; k++) {
+    bare = substr(P[k], 1, 1) == "0"; strip = substr(P[k], 2, 1) == "1"; delim = substr(P[k], 3)
+    while (i < n) {
+      j = index(substr(t, i + 1), "\n")
+      line = j == 0 ? substr(t, i + 1) : substr(t, i + 1, j - 1)
+      i = j == 0 ? n : i + j
+      if (strip) sub(/^\t+/, "", line)
+      if (line == delim) break
+      if (bare) subs(line)
+    }
+  }
+  return i
+}
+function lex(t,   n, i, c, d, st, w, seg, pend, e, strip, delim, hq) {
+  n = length(t); st = "N"; w = ""; seg = ""; pend = ""
+  for (i = 1; i <= n; i++) {
+    c = substr(t, i, 1)
+    if (st == "S") { if (c == "\047") st = "N"; else w = w quoted(c); continue }
+    if (c == "\\") {
+      d = substr(t, ++i, 1)
+      if (d != "\n") w = w (st == "D" ? quoted(d) : d)
+      continue
+    }
+    if (c == "$" && substr(t, i + 1, 1) == "(") { e = close_paren(t, i + 1); lex(substr(t, i + 2, e - i - 2)); i = e; continue }
+    if (c == "`") { e = close_tick(t, i); lex(substr(t, i + 1, e - i - 1)); i = e; continue }
+    if (c == "$" && (substr(t, i + 1, 5) == "{IFS}" || (substr(t, i + 1, 3) == "IFS" && substr(t, i + 4, 1) !~ /[A-Za-z0-9_]/))) {
+      i += (substr(t, i + 1, 1) == "{") ? 5 : 3
+      if (st == "D") w = w QSP; else { seg = addword(seg, w); w = "" }
+      continue
+    }
+    if (st == "D") { if (c == "\"") st = "N"; else w = w quoted(c); continue }
+    if (c == "\047") { st = "S"; continue }
+    if (c == "\"") { st = "D"; continue }
+    if (c == " " || c == "\t") { seg = addword(seg, w); w = ""; continue }
+    if (c == "#" && w == "") { while (i < n && substr(t, i + 1, 1) != "\n") i++; continue }
+    if (substr(t, i, 3) == "<<<") { w = w "<<<"; i += 2; continue }
+    if (substr(t, i, 2) == "<<") {
+      seg = addword(seg, w); w = ""
+      i += 2; strip = 0; delim = ""; hq = 0
+      if (substr(t, i, 1) == "-") { strip = 1; i++ }
+      while (substr(t, i, 1) == " " || substr(t, i, 1) == "\t") i++
+      for (; i <= n; i++) {
+        d = substr(t, i, 1)
+        if (d ~ /[ \t\n;&|()<>]/) break
+        if (d == "\047" || d == "\"" || d == "\\") hq = 1; else delim = delim d
+      }
+      i--
+      pend = pend (pend == "" ? "" : SEP) hq strip delim
+      continue
+    }
+    if (c == "\n" || index(";&|(){}", c)) {
+      seg = addword(seg, w); w = ""
+      if (seg != "") print seg
+      seg = ""
+      if (c == "\n" && pend != "") { i = heredocs(t, i, pend); pend = "" }
+      continue
+    }
+    w = w c
+  }
+  seg = addword(seg, w)
+  if (seg != "") print seg
+}
+'
+
+# One segment's program, with transparent prefixes stripped. A `bash -c` / `eval` segment prints
+# INNER followed by the script it runs, for the caller to lex again.
 strip_prefixes() {
   s=$(printf '%s' "$1" | sed -e 's/^ *//' -e 's/ *$//')
   while :; do
@@ -76,7 +197,7 @@ strip_prefixes() {
     first=${s%% *}
     rest=${s#* }
     case "$first" in
-      env | command | nice | ionice | xargs | time | timeout | stdbuf | nohup | sudo | eval | exec | builtin)
+      env | command | nice | ionice | xargs | time | timeout | stdbuf | nohup | sudo | exec | builtin)
         # The prefix's own flags and a bare number (`nice -n 5`, `timeout 5`, `env -i`) go with it.
         s=$rest
         while :; do
@@ -89,11 +210,16 @@ strip_prefixes() {
         s=$rest
         continue
         ;;
+      eval)
+        printf '%s%s' "$INNER" "$rest"
+        return
+        ;;
       bash | sh | zsh | dash | ksh)
         case "$rest" in
           -c\ * | -lc\ * | -ic\ * | -ec\ *)
             s=${rest#* }
-            continue
+            printf '%s%s' "$INNER" "${s%% *}"
+            return
             ;;
         esac
         ;;
@@ -143,16 +269,20 @@ is_ship() {
       return 1
       ;;
     gh)
-      local after_pr=0 has_api=0
+      local after_pr=0 has_api=0 after_repo=0 repo_create=0 has_push=0
       for tok in "${ARGS[@]}"; do
         if [ "$after_pr" -eq 1 ]; then
           case "$tok" in
             create | ready | merge | edit | close | reopen | lock | unlock) return 0 ;;
           esac
         fi
+        [ "$after_repo" -eq 1 ] && [ "$tok" = create ] && repo_create=1
+        case "$tok" in --push | --push=*) has_push=1 ;; esac
         [ "$tok" = pr ] && after_pr=1
+        [ "$tok" = repo ] && after_repo=1
         [ "$tok" = api ] && has_api=1
       done
+      [ "$repo_create" -eq 1 ] && [ "$has_push" -eq 1 ] && return 0
       if [ "$has_api" -eq 1 ]; then
         for tok in "${ARGS[@]}"; do
           case "$tok" in
@@ -177,8 +307,10 @@ step_tokens() {
     | jq -r '.steps[] | select(.step == "push" or .step == "pr_open" or .step == "merge") | .command // empty' 2>/dev/null \
     | while IFS= read -r cmd; do
         IFS=$' \t\n'
+        set -f
         # shellcheck disable=SC2086
         set -- $cmd
+        set +f
         [ $# -gt 0 ] || continue
         is_runner "${1##*/}" || continue
         while [ $# -gt 1 ]; do case "${!#}" in -*) set -- "${@:1:$(($# - 1))}" ;; *) break ;; esac; done
@@ -203,48 +335,45 @@ runs_step() {
 }
 
 block() {
-  set +f
-  IFS=$OLDIFS
   log blocked
   echo "no-push-guard: a subagent never pushes and never opens, readies, edits, or merges a PR — commit on your branch, run the local gates, and report the branch, worktree, and PR-body path; the spawner pushes and opens the PR. Blocked: $CMD" >&2
   exit 2
 }
 
-OLDIFS=$IFS
-IFS='
-'
-set -f
 SEGMENTS=()
 HAS_RUNNER=0
-for seg in $NORM; do
-  seg=$(strip_prefixes "$seg")
-  [ -n "$seg" ] || continue
-  IFS=' '
-  # Deliberate word-splitting: $seg is normalized (quotes and backslashes deleted, whitespace
-  # collapsed) and this is the tokenization step.
-  # shellcheck disable=SC2206
-  SEGTOK=($seg)
-  IFS='
-'
-  if is_ship "${SEGTOK[@]}"; then block; fi
-  b=$(bin_of "${SEGTOK[@]}") && is_runner "$b" && HAS_RUNNER=1
-  SEGMENTS+=("$seg")
-done
+# Match 1 on every segment of the shell text $1, recursing into `bash -c` / `eval` scripts.
+check_text() {
+  local seg b
+  local -a SEGTOK
+  while IFS= read -r seg; do
+    seg=$(strip_prefixes "$seg")
+    [ -n "$seg" ] || continue
+    case "$seg" in
+      "$INNER"*)
+        seg=${seg#"$INNER"}
+        seg=${seg//$QSP/ }
+        check_text "${seg//$QNL/$NL}"
+        continue
+        ;;
+    esac
+    IFS=' ' read -r -a SEGTOK <<<"$seg"
+    [ ${#SEGTOK[@]} -gt 0 ] || continue
+    if is_ship "${SEGTOK[@]}"; then block; fi
+    b=$(bin_of "${SEGTOK[@]}") && is_runner "$b" && HAS_RUNNER=1
+    SEGMENTS+=("$seg")
+  done < <(printf '%s' "$1" | awk "$LEXER")
+}
+check_text "$CMD"
 
 if [ "$HAS_RUNNER" -eq 1 ]; then
   TOKENS=$(step_tokens)
   if [ -n "$TOKENS" ]; then
     for seg in "${SEGMENTS[@]}"; do
-      IFS=' '
-      # shellcheck disable=SC2206
-      SEGTOK=($seg)
-      IFS='
-'
+      IFS=' ' read -r -a SEGTOK <<<"$seg"
       if runs_step "$TOKENS" "${SEGTOK[@]}"; then block; fi
     done
   fi
 fi
-set +f
-IFS=$OLDIFS
 log passed
 exit 0
