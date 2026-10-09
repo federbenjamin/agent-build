@@ -1,0 +1,50 @@
+flowchart LR
+    subgraph BRIEF
+        direction TB
+        req(["request"])
+        bw["brief-writer"]
+        bc(["brief,<br/>committed first"])
+        req --> bw --> bc
+    end
+
+    subgraph BUILD
+        direction TB
+        bld["builder<br/>per part"]
+        ta["test-author<br/>per slice"]
+        bld ~~~ ta
+    end
+
+    subgraph CLOSE
+        direction TB
+        wave["wave readers"]
+        table["reviewTable.ts"]
+        rows{"rows?"}
+        fixer["fresh fixer"]
+        recheck["fresh read,<br/>hand-tester"]
+        open{"open<br/>question?"}
+        draft(["draft PR,<br/>waits for you"])
+        wave --> table --> rows
+        rows -->|"red result"| fixer --> recheck
+        recheck -->|"max 4"| table
+        rows -->|"none"| open
+        open -->|"yes"| draft
+    end
+
+    subgraph SHIP
+        direction TB
+        push["checks, push,<br/>draft PR"]
+        gate["shipGate.ts"]
+        merge["merge step"]
+        push --> gate -->|"exit 0"| merge
+    end
+
+    BRIEF --> BUILD --> CLOSE --> SHIP
+
+    classDef agent fill:#dbeafe,stroke:#1d4ed8,stroke-width:2px,color:#0f172a
+    classDef script fill:#dcfce7,stroke:#15803d,stroke-width:2px,color:#0f172a
+    classDef decision fill:#fef3c7,stroke:#b45309,stroke-width:2px,color:#0f172a
+    classDef artifact fill:#f8fafc,stroke:#64748b,stroke-width:1px,color:#0f172a
+    class bw,bld,ta,wave,fixer,recheck agent
+    class table,gate,merge,push script
+    class rows,open decision
+    class req,bc,draft artifact

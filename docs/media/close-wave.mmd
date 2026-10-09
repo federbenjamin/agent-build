@@ -1,0 +1,47 @@
+flowchart LR
+    subgraph wave ["Wave readers"]
+        direction TB
+        cur["review-cursory"]
+        ver["build-verifier"]
+        hunt["silent-failure-<br/>hunter: R1+"]
+        sec["security-review:<br/>R2"]
+        simp["simplifier:<br/>size M+"]
+        codex["Codex pair:<br/>M+ and R1+"]
+        cur ~~~ ver ~~~ hunt ~~~ sec ~~~ simp ~~~ codex
+    end
+
+    table["reviewTable.ts"]
+    fixer["fresh fixer"]
+    plan["stagePlan.ts"]
+    gate["shipGate.ts"]
+    merge["marker,<br/>merge step"]
+    ask{"decision<br/>answered?"}
+    bank(["banked:<br/>draft PR"])
+    facts[("facts no<br/>agent wrote")]
+
+    subgraph reread ["After each fix"]
+        direction TB
+        confirm["fresh readers"]
+        hand["hand-tester"]
+        confirm ~~~ hand
+    end
+
+    wave --> table
+    table --> fixer
+    fixer --> plan --> reread
+    reread -->|"new rows"| table
+    fixer --> ask
+    ask -->|"yes"| table
+    ask -->|"no"| bank
+    table -->|"none open"| gate
+    facts --> gate
+    gate --> merge
+
+    classDef agent fill:#dbeafe,stroke:#1d4ed8,stroke-width:2px,color:#0f172a
+    classDef script fill:#dcfce7,stroke:#15803d,stroke-width:2px,color:#0f172a
+    classDef decision fill:#fef3c7,stroke:#b45309,stroke-width:2px,color:#0f172a
+    classDef artifact fill:#f8fafc,stroke:#64748b,stroke-width:1px,color:#0f172a
+    class cur,hunt,sec,ver,simp,codex,fixer,confirm,hand agent
+    class table,plan,gate,merge script
+    class ask decision
+    class bank,facts artifact
