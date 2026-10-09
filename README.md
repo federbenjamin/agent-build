@@ -119,7 +119,7 @@ allow auto-merge (a new GitHub repo does not). A repo's own `merge` step replace
 
 | variable | what lives there | default |
 | --- | --- | --- |
-| `AGENT_BUILD_STORE` | a public repo's build steps, notes, and briefs, at `<store>/<owner>/<name>/` | `~/.local/state/agent-build/store` |
+| `AGENT_BUILD_STORE` | the build steps, notes, and briefs of a repo whose `git config agents.profile` is `public`, at `<store>/<owner>/<name>/`; a repo without that key keeps them in its own `.claude/` and never reads the store | `~/.local/state/agent-build/store` |
 | `AGENT_BUILD_RUN_ROOT` | each run's dir: its ledger, reader findings, fix tables, hand-test files | `~/.local/state/agent-build/runs` |
 | `SESSION_LOGS_DIR` | session logs, when you keep them; a run writes to one only when it is set | none |
 
