@@ -13,7 +13,7 @@
  * The batch branch's open Todo line (`- [ ] [<batch branch>] batch: …`) follows the same rules: it
  * moves once flipped `[x]` and its own branch merges.
  *
- * At a compaction (`--compact`, run by the SessionStart hook): appends the marker
+ * At a compaction (`--compact`, which the operator's own SessionStart hook may run; this plugin ships none): appends the marker
  * `- HH:MMZ [session] compacted` to the Work log, then moves every `[session]` Work-log line above
  * the PREVIOUS marker (so a line lives in the log across exactly one compaction, the one whose
  * summary might drop it) and every `[x] [session]` Todo line. Work outside any branch has no merge
