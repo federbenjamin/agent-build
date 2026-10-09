@@ -5,7 +5,9 @@
  * A role resolves from the first of three places: `<tree>/.codex/agents/<role>.toml` (a repo's own
  * pin), `~/.codex/agents/<role>.toml` (the user's), then this repo's `agents.json` row and
  * `agents/<role>.md` (`roleFromRepo`). A role toml writes every value as a JSON string, so each
- * right-hand side parses with `JSON.parse` and no TOML dependency is needed.
+ * right-hand side parses with `JSON.parse` and no TOML dependency is needed. The sandbox is the
+ * role's own (`sandbox_mode` in a toml, `codexSandboxMode` in an `agents.json` row) when it names
+ * one, else `defaultSandbox(role)`.
  *
  *   node codexRole.ts <role> --tree <abs-dir> --dispatch <file> --out <file> [--log <file>] [--dry-run]
  */
@@ -31,12 +33,24 @@ export const CODEX_PREAMBLE =
 /** The separator between the role's projected prompt and the run's dispatch. */
 const PROMPT_SEPARATOR = "\n\n---\n\n";
 
+const SANDBOXES = ["read-only", "workspace-write"] as const;
+export type Sandbox = (typeof SANDBOXES)[number];
+
 export interface RolePins {
   model: string;
   effort: string;
   instructions: string;
   /** `project_doc_max_bytes = 0` in the toml: a brief-only role that starts without the project AGENTS.md. */
   projectDocs: boolean;
+  /** The role's own sandbox; null when it names none, and the run falls back to `defaultSandbox`. */
+  sandbox: Sandbox | null;
+}
+
+function sandboxOf(value: string | null, where: string): Sandbox | null {
+  if (value === null) return null;
+  if (!(SANDBOXES as readonly string[]).includes(value))
+    throw new Error(`codexRole: ${where} must be ${SANDBOXES.join(" or ")}, got ${JSON.stringify(value)}`);
+  return value as Sandbox;
 }
 
 export function parseRoleToml(text: string): RolePins {
@@ -44,16 +58,21 @@ export function parseRoleToml(text: string): RolePins {
     const m = new RegExp(`^${key} = (.*)$`, "m").exec(text);
     return m === null ? null : m[1]!;
   };
-  const read = (key: string): string => {
+  const readOptional = (key: string): string | null => {
     const raw = find(key);
-    if (raw === null) throw new Error(`codexRole: ${key} missing in role toml`);
-    return JSON.parse(raw) as string;
+    return raw === null ? null : (JSON.parse(raw) as string);
+  };
+  const read = (key: string): string => {
+    const value = readOptional(key);
+    if (value === null) throw new Error(`codexRole: ${key} missing in role toml`);
+    return value;
   };
   return {
     model: read("model"),
     effort: read("model_reasoning_effort"),
     instructions: read("developer_instructions"),
     projectDocs: find("project_doc_max_bytes") !== "0",
+    sandbox: sandboxOf(readOptional("sandbox_mode"), "sandbox_mode in role toml"),
   };
 }
 
@@ -61,10 +80,11 @@ type AgentRow = {
   name: string;
   codexModel?: string;
   codexReasoningEffort?: string;
+  codexSandboxMode?: string;
   context?: { claudeMd?: boolean };
 };
 
-/** The role from `agents.json` (`codexModel`, `codexReasoningEffort`, `context.claudeMd`) and
+/** The role from `agents.json` (`codexModel`, `codexReasoningEffort`, `codexSandboxMode`, `context.claudeMd`) and
  *  `agents/<role>.md`'s body after its frontmatter, prefixed by CODEX_PREAMBLE; null when the
  *  repo declares no such agent. Throws when the row lacks `codexModel` or `codexReasoningEffort`. */
 export function roleFromRepo(role: string, repoRoot: string): RolePins | null {
@@ -82,11 +102,13 @@ export function roleFromRepo(role: string, repoRoot: string): RolePins | null {
     effort: row.codexReasoningEffort,
     instructions: `${CODEX_PREAMBLE}\n\n${body}`,
     projectDocs: row.context?.claudeMd !== false,
+    sandbox: sandboxOf(row.codexSandboxMode ?? null, `agents.json's ${role} codexSandboxMode`),
   };
 }
 
-/** Roles that author and prove tests edit their disposable tree; every reader role reads. */
-export function defaultSandbox(role: string): "workspace-write" | "read-only" {
+/** The sandbox of a role that names none: roles that author and prove tests edit their disposable
+ *  tree; every reader role reads. */
+export function defaultSandbox(role: string): Sandbox {
   return role === "test-author" ? "workspace-write" : "read-only";
 }
 
@@ -216,7 +238,7 @@ export function main(argv: string[], deps: CodexRoleDeps = {}): number {
   const pins = toml !== null ? parseRoleToml(toml) : repoRole(role);
   if (pins === null) return usage(`unknown role: ${role}`);
 
-  const sandbox = defaultSandbox(role);
+  const sandbox = pins.sandbox ?? defaultSandbox(role);
   const args = codexArgs({ tree, sandbox, model: pins.model, effort: pins.effort, out, projectDocs: pins.projectDocs });
   if (dryRun) {
     const from =

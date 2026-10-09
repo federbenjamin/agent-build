@@ -5,7 +5,6 @@
  *
  *   class: R<n>            (or `none` on a draft the class moment has not pinned yet)
  *   model: <m>
- *   budget: <n>h           (`none` only under `--at`: everywhere else a missing line is an exit 1)
  *   target-files: <n>
  *   claims: <n> (H1, H2, …)
  *   parts: <n> (P1 sonnet, P2 opus after P1)        (the implicit P1 when there is no `## Parts`)
@@ -45,7 +44,6 @@ import {
   BriefPartError,
   type BriefSummary,
   manifestWithoutExercise,
-  parseBudgetLine,
   sliceExcerpt,
   summariseBrief,
   testRunnerOf,
@@ -84,7 +82,6 @@ export function formatSummary(s: BriefSummary, sliceGuide: number = DEFAULTS.TES
   return [
     cls,
     `model: ${s.model ?? (s.legacy.includes("model") ? "none (legacy: no line)" : "none")}`,
-    `budget: ${s.budget === null ? "none" : `${s.budget}h`}`,
     `target-files: ${s.targets?.length ?? (s.legacy.includes("target-files") ? "0 (legacy: no section)" : 0)}`,
     claims,
     parts,
@@ -203,8 +200,6 @@ export async function main(argv: string[], exit: (code: number) => void = exitWh
   let excerpt: string | null = null;
   try {
     summary = summariseBrief(text, { legacyOk: at !== undefined });
-    // Throws the missing-line error; a first-commit read (`--at`) may predate the line.
-    if (at === undefined && summary.kind === "brief" && summary.budget === null) parseBudgetLine(text);
     if (slice !== undefined) excerpt = sliceExcerpt(text, slice);
   } catch (err) {
     if (!(err instanceof BriefPartError)) throw err;
@@ -255,7 +250,6 @@ export async function main(argv: string[], exit: (code: number) => void = exitWh
           class: summary.cls,
           model: summary.model,
           why: summary.why,
-          budget: summary.budget,
           targets: summary.targets,
           claims: summary.claims,
           parts: summary.parts,

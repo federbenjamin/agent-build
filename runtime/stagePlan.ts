@@ -11,10 +11,7 @@
  *   reader: security-review — owed (R2; fix-security fires)
  *   reader: build-verifier — not owed (no amend brief:, no rename); run <manifest> --brief-file <brief> --no-exercise yourself
  *   hand-test: all claims (H1 H2 H3) · needs: stack
- *   budget: 1.4h of 3h — ok
  *
- * The `budget:` line (`lib/budget.ts`) is the wall budget before the read is spawned:
- * `— over: spawn nothing` is CLOSE.md §The budget stop, a verdict, never an exit code.
  * `<stage>` is confirm-1, confirm-2, last, escalate, drift, drift-confirm, or unbank (the one
  * cursory read of a banked run's fix, over the `unbank:` line's `from..sha`). The ledger is
  * `<d>/ship.md`; the repo is the cwd (the run's tree), and a tree on another branch than the
@@ -29,7 +26,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
-import { budgetVerdict, formatBudget } from "./lib/budget.ts";
 import { assertKnownFlags, takeValue } from "./lib/cliArgs.ts";
 import { exitWhenFlushed } from "./lib/exitWhenFlushed.ts";
 import { isMain } from "./lib/isMain.ts";
@@ -150,7 +146,6 @@ export async function main(
     const plan = planStage(ctx, stage, from === undefined ? {} : { from });
     const lines = [...formatPlan(plan, ledger.cls), formatHandTest(claimStates(ctx))];
     for (const note of ctx.notes) lines.push(`signals: ${note}`);
-    lines.push(formatBudget(budgetVerdict(ledger.build?.started ?? null, ctx.brief.budget, new Date())));
     console.log(lines.join("\n"));
   } catch (err) {
     if (err instanceof ArmEnvError) {

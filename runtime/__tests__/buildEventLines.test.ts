@@ -117,8 +117,9 @@ test("emit lines: every stop-file line carries shell-active values as data and r
 
 /**
  * SKILL's `<runid>` mint, run as a session runs it: every mint in one shell (one `$$`), the first
- * `inOrder` one after another and the rest at once, with `date` pinned to one second and
- * `/tmp/claude` moved into a temp dir. Returns each runid: the minted dir's name after `build-`.
+ * `inOrder` one after another and the rest at once, with `date` pinned to one second and `TMPDIR`
+ * a fresh temp dir holding nothing, as on a machine that has never run a build. Returns each
+ * runid: the minted dir's name after `build-`.
  */
 function mintRunids(inOrder: number, atOnce: number): string[] {
   const skill = readFileSync(join(SKILL_DIR, "SKILL.md"), "utf8");
@@ -126,13 +127,12 @@ function mintRunids(inOrder: number, atOnce: number): string[] {
   assert.ok(mint !== undefined, "SKILL.md names the command that mints `<runid>`");
   const root = mkdtempSync(join(tmpdir(), "build-mint-"));
   const bin = join(root, "bin");
-  const scratch = join(root, "claude");
+  const scratch = join(root, "tmp");
   mkdirSync(bin);
   mkdirSync(scratch);
   writeFileSync(join(bin, "date"), "#!/bin/sh\necho 1791266702\n", { mode: 0o755 });
-  const one = mint.replaceAll("/tmp/claude", scratch);
-  const script = [...Array<string>(inOrder).fill(one), ...Array<string>(atOnce).fill(`(${one}) &`), "wait"].join("\n");
-  const env = { ...process.env, PATH: `${bin}:${process.env.PATH ?? ""}` };
+  const script = [...Array<string>(inOrder).fill(mint), ...Array<string>(atOnce).fill(`(${mint}) &`), "wait"].join("\n");
+  const env = { ...process.env, PATH: `${bin}:${process.env.PATH ?? ""}`, TMPDIR: scratch };
   const run = spawnSmoke("/bin/sh", ["-c", script], { cwd: root, env });
   assert.equal(run.status, 0, `the mint failed: ${mint}\n${run.stderr}`);
   const dirs = run.stdout.split("\n").filter((l) => l !== "");

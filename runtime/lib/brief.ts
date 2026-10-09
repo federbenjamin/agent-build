@@ -1,5 +1,5 @@
 /**
- * The brief's machine-read parts — the `model:` and `budget:` header lines, `## Target files`, `## Hand test`,
+ * The brief's machine-read parts — the `model:` header line, `## Target files`, `## Hand test`,
  * `## Parts`, and `## Test slices` — and the one parser each reader imports (the claim counter, the
  * gate, the stage plan, the table script). Pure: no fs, no git; callers pass the text.
  *
@@ -12,7 +12,7 @@
 
 import { parseClassLine, type RiskClass } from "./riskClass.ts";
 
-export type BriefPart = "class" | "model" | "budget" | "target-files" | "hand-test" | "parts" | "test-slices";
+export type BriefPart = "class" | "model" | "target-files" | "hand-test" | "parts" | "test-slices";
 
 export class BriefPartError extends Error {
   readonly part: BriefPart;
@@ -31,7 +31,6 @@ export const BRIEF_MODELS = ["opus", "sonnet", "session"] as const;
 export type BriefModel = (typeof BRIEF_MODELS)[number];
 
 export const MODEL_LINE_RE = /^model:\s*(opus|sonnet|session)\b(?:\s+—\s+(.+))?$/;
-export const BUDGET_LINE_RE = /^budget:\s*(\d+(?:\.\d+)?)h\s*$/;
 const TARGET_ENTRY_RE = /^- (\S+)(?:\s+—\s+.*)?$/;
 const CLAIM_HEAD_RE = /^- (H[1-9]\d*) · (.+)$/;
 const CLAIM_RUN_RE = /^ {2}- run: (.+)$/;
@@ -181,40 +180,6 @@ export function parseModelLine(text: string): { model: BriefModel; why: string |
     throw new BriefPartError("model", "malformed", l.line, `must sit directly under the class line (line ${classLine.line})`);
   }
   return { model: m[1] as BriefModel, why: m[2]?.trim() ?? null, line: l.line };
-}
-
-/** The `budget: <n>h` header line: exactly one, directly under the `model:` line; `<n>` is wall hours
- *  for BUILD plus CLOSE, a positive decimal. */
-export function parseBudgetLine(text: string): { hours: number; line: number } {
-  const head = header(text);
-  const lines = head.filter((l) => /^budget:/.test(l.text));
-  if (lines.length === 0) {
-    throw new BriefPartError("budget", "missing", null, "missing: no `budget: <n>h` line in the header (it sits directly under `model:`)");
-  }
-  if (lines.length > 1) throw new BriefPartError("budget", "malformed", lines[1]!.line, "a second `budget:` line");
-  const l = lines[0]!;
-  const m = BUDGET_LINE_RE.exec(l.text);
-  const hours = m ? Number(m[1]) : 0;
-  if (!m || !Number.isFinite(hours) || hours <= 0) {
-    throw new BriefPartError("budget", "malformed", l.line, `expected \`budget: <n>h\` with <n> a finite number above 0, got: ${l.text}`);
-  }
-  const modelLine = head.find((h) => /^model:/.test(h.text));
-  if (modelLine === undefined || modelLine.line + 1 !== l.line) {
-    const where = modelLine === undefined ? "the header has no `model:` line" : `line ${modelLine.line}`;
-    throw new BriefPartError("budget", "malformed", l.line, `must sit directly under the model line (${where})`);
-  }
-  return { hours, line: l.line };
-}
-
-/** The `budget:` hours, or null when the header has no `budget:` line; a malformed line throws as
- *  `parseBudgetLine` does. The one reader for a brief that may predate the line. */
-export function budgetHoursOrNull(text: string): number | null {
-  try {
-    return parseBudgetLine(text).hours;
-  } catch (err) {
-    if (err instanceof BriefPartError && err.kind === "missing") return null;
-    throw err;
-  }
 }
 
 /** `## Target files`: one `- <path or glob>[ — <why>]` per line (backticks stripped), blank lines
@@ -871,8 +836,6 @@ export interface BriefSummary {
   /** True when the brief has a `## Parts` section (the ledger owes `parts=` only then). */
   partsDeclared: boolean;
   slices: Slice[];
-  /** The `budget:` line's hours; null when the brief has none (or on a hand-test file). */
-  budget: number | null;
   /** Set when a missing part was read as a brief from before the parts existed (`legacyOk`). */
   legacy: BriefPart[];
 }
@@ -910,20 +873,17 @@ export function summariseBrief(text: string, opts: { legacyOk?: boolean } = {}):
       );
     }
     const claims = parseHandTestBlock(text).claims;
-    return { kind, cls, model: null, why: null, targets: null, claims, parts: [], partsDeclared: false, slices: [], budget: null, legacy };
+    return { kind, cls, model: null, why: null, targets: null, claims, parts: [], partsDeclared: false, slices: [], legacy };
   }
   const model = tolerate<{ model: BriefModel | null; why: string | null }>(
     "model",
     () => parseModelLine(text),
     { model: null, why: null }
   );
-  // Optional with or without legacyOk: this is also the gate's HEAD read, and an in-flight brief may
-  // predate the line. briefCheck refuses its absence.
-  const budget = budgetHoursOrNull(text);
   const targets = tolerate<string[] | null>("target-files", () => parseTargetFiles(text), null);
   const claims = tolerate<Claim[]>("hand-test", () => parseHandTestBlock(text).claims, []);
   const parts = model.model === null || targets === null ? [] : parseParts(text);
   const partsDeclared = headings.includes("Parts");
   const slices = parseTestSlices(text);
-  return { kind, cls, model: model.model, why: model.why, targets, claims, parts, partsDeclared, slices, budget, legacy };
+  return { kind, cls, model: model.model, why: model.why, targets, claims, parts, partsDeclared, slices, legacy };
 }

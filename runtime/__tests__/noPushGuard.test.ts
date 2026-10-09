@@ -123,6 +123,40 @@ test("read-only and look-alike git/gh commands pass", () => {
   }
 });
 
+test("gh repo create with --push is a push; without it, it passes", () => {
+  expectBlocked("gh repo create x/y --private --source . --push");
+  expectBlocked("gh repo create --push=true x/y --source .");
+  expectPassed("gh repo create x/y --private --source .");
+});
+
+test("a ship command that is only data passes; one in a substitution or a shell script still blocks", () => {
+  // The wrong block this fixes: a heredoc that wrote a build-steps file naming `gh pr merge`.
+  for (const cmd of [
+    "cat > .claude/build-steps.toml <<'EOF'\npush = \"git push\"\nmerge = \"gh pr merge --squash\"\nEOF",
+    "cat > notes.md <<'EOF'\nlater:\ngh pr merge 12 --squash\n$(git push)\nEOF",
+    "cat > run.sh <<EOF\ngit push\nEOF",
+    'echo "done; gh pr merge later"',
+    "rg 'gh pr create|git push' docs/",
+    'gh issue comment 5 --body "run gh pr merge after review"',
+    "git log -3 # then git push",
+    '"git push"',
+  ]) {
+    expectPassed(cmd);
+  }
+  for (const cmd of [
+    "cat <<EOF\n$(git push)\nEOF",
+    "cat <<'EOF' > f\nhi\nEOF\ngh pr create --fill",
+    'echo "$(gh pr merge 1)"',
+    "echo `git push`",
+    'bash -c "echo hi; git push"',
+    'eval "git push"',
+    "diff <(git push) x",
+    'echo "a" # note\ngit push',
+  ]) {
+    expectBlocked(cmd);
+  }
+});
+
 test("the repo's own push, pr_open and merge steps are blocked when run through a script runner", () => {
   for (const cmd of ["pnpm push", "pnpm pr:open", "pnpm pr:merge", "pnpm run pr:merge", "npx pnpm pr:merge", "pnpm -s test && pnpm pr:merge"]) {
     expectBlocked(cmd, STEP_REPO);

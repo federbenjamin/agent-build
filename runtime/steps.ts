@@ -7,6 +7,11 @@
 // Two keys name repo files, not commands: `thresholds` (read by thresholds.ts) and `notes` (the
 // repo's build notes: a `## <agent or skill>` section per role that the role reads first).
 // Codex is optional: `codex_role` on its fallback resolves to no command when no `codex` is on PATH.
+// `tests` and `checks` fall back to `npm test` when the repo's package.json has a real test script,
+// and `install` to the frozen install of its pnpm or npm lockfile.
+// `pr_open` takes SHIP's `--title` and `--body-file` flags (gh refuses it without them, so the body
+// is never filled from commits); `merge` readies the draft, then turns on auto-merge, or merges at
+// once where the repo does not allow auto-merge.
 //   node steps.ts [repo-dir] [--json | --get <step>]
 //   node steps.ts --template <repo name>     the build-steps.toml a new repo starts from
 import { accessSync, constants, existsSync, readFileSync, statSync } from "node:fs";
@@ -23,11 +28,38 @@ const RUNTIME = `node ${/^[\w./~-]+$/.test(HERE) ? HERE : `'${HERE.replaceAll("'
 export const FALLBACKS: Record<string, string | null> = {
   size: `${RUNTIME}/size.ts`, signals: null, checks: null, exit_checks: null, fix_checks: null, tests: null,
   install: null, db_gate: null, manifest: null, mutation_proof: null, push: "git push",
-  pr_open: "gh pr create --draft --fill", merge: "gh pr merge --auto --squash",
+  pr_open: "gh pr create --draft", merge: "gh pr ready && gh pr merge --auto --squash || gh pr merge --squash",
   codex_role: `${RUNTIME}/codexRole.ts`, push_stats: null, thresholds: null, notes: null,
 };
 
 export type Step = { step: string; command: string | null; source: "repo" | "fallback" };
+
+/** The fallback of `tests` and `checks`: `npm test` when `repo`'s package.json has a test script
+ *  other than `npm init`'s placeholder (which only fails), else none. */
+export function packageTestCommand(repo: string): string | null {
+  let pkg: unknown;
+  try {
+    pkg = JSON.parse(readFileSync(join(repo, "package.json"), "utf8"));
+  } catch {
+    return null;
+  }
+  const script = (pkg as { scripts?: { test?: unknown } } | null)?.scripts?.test;
+  return typeof script === "string" && script.trim() !== "" && !/no test specified/.test(script) ? "npm test" : null;
+}
+
+/** The fallback of `install`: the frozen install of the lockfile `repo` carries (pnpm's, then
+ *  npm's), so `npm test` finds the dependencies in a fresh worktree; none without a lockfile. */
+export function packageInstallCommand(repo: string): string | null {
+  if (existsSync(join(repo, "pnpm-lock.yaml"))) return "pnpm install --frozen-lockfile";
+  if (existsSync(join(repo, "package-lock.json"))) return "npm ci";
+  return null;
+}
+
+/** The fallbacks read from the repo's own package files, by step. */
+function packageFallbacks(repo: string): Record<string, string | null> {
+  const test = packageTestCommand(repo);
+  return { tests: test, checks: test, install: packageInstallCommand(repo) };
+}
 
 // The steps a new repo is asked about first, with the hint each line carries; every other key
 // stays on its fallback until the repo names it.
@@ -99,10 +131,13 @@ export function resolveSteps(repo: string, opts: ResolveOpts = {}): { file: stri
     mapped.set(key, JSON.parse(quoted));
   }
   const codex = mapped.has("codex_role") || codexOnPath(opts.env ?? process.env);
+  const fromPackage = packageFallbacks(repo);
+  const fallbackOf = (step: string, fallback: string | null): string | null =>
+    step === "codex_role" && !codex ? null : step in fromPackage ? fromPackage[step]! : fallback;
   const steps = Object.entries(FALLBACKS).map(([step, fallback]): Step =>
     mapped.has(step)
       ? { step, command: mapped.get(step)!, source: "repo" }
-      : { step, command: step === "codex_role" && !codex ? null : fallback, source: "fallback" });
+      : { step, command: fallbackOf(step, fallback), source: "fallback" });
   return { file, found, steps };
 }
 

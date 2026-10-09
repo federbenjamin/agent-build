@@ -40,7 +40,7 @@ test("mapped steps win, unmapped steps fall back, comments and blanks are skippe
   assert.equal(r.found, true);
   assert.deepEqual(s.push, { step: "push", command: "pnpm push", source: "repo" });
   assert.equal(s.checks.command, 'a "quoted" && b');
-  assert.deepEqual(s.merge, { step: "merge", command: "gh pr merge --auto --squash", source: "fallback" });
+  assert.deepEqual(s.merge, { step: "merge", command: FALLBACKS.merge, source: "fallback" });
 });
 
 test("an unknown step, a malformed line, or a step mapped twice is refused with its line", () => {

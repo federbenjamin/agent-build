@@ -15,6 +15,7 @@ The `/build` system: the skill (`skills/build/`), its runtime scripts (`runtime/
 ## Git workflow
 
 - `main` changes only through a PR, squash-merged.
+- Branch names: `<type>/<slug>`, the type being the commit type (`feat`, `fix`, `docs`, `chore`, `refactor`).
 <!-- <<< git-workflow -->
 
 ## Project state

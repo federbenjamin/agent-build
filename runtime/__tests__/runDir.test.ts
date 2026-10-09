@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { parseLedger } from "../lib/ledger.ts";
-import { briefBudgetHours, missingHandTestOutputs, readerFiles, resolveTargets } from "../lib/runDir.ts";
+import { missingHandTestOutputs, readerFiles, resolveTargets } from "../lib/runDir.ts";
 import { parseHandTestFile } from "../lib/runFiles.ts";
 
 test("fix4: resolveTargets never counts the brief, or a --from-branch run's hand-test file, as a target", () => {
@@ -43,28 +43,6 @@ test("resolveTargets reads a `store:` brief from the store dir, where no code pa
     if (before === undefined) delete process.env.AGENT_BUILD_STORE;
     else process.env.AGENT_BUILD_STORE = before;
     rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test("briefBudgetHours: the brief's hours; null with no line, no brief:, or --from-branch; a malformed line throws naming the brief", () => {
-  const repo = mkdtempSync(join(tmpdir(), "budget-"));
-  try {
-    mkdirSync(join(repo, "docs"));
-    const head = "class: R1 — operator, 2026-09-28\nflow: 2\n";
-    const briefed = parseLedger(`${head}brief: docs/b.md\n`);
-    const write = (budget: string[]) =>
-      writeFileSync(join(repo, "docs", "b.md"), ["class: R1 — o, 2026-09-28", "model: opus", ...budget, "", "## Target files", "", "- src/a.ts", ""].join("\n"));
-    write(["budget: 2.5h"]);
-    assert.equal(briefBudgetHours(briefed, repo), 2.5);
-    write([]);
-    assert.equal(briefBudgetHours(briefed, repo), null);
-    write(["budget: 3"]);
-    assert.throws(() => briefBudgetHours(briefed, repo), /^Error: docs\/b\.md: budget: line 3: expected `budget: <n>h`/);
-    assert.equal(briefBudgetHours(parseLedger(head), repo), null);
-    const fromBranch = parseLedger(`${head}from-branch: dryrun/x\nbrief: docs/b.md\nhand-test-block: docs/b.md\nfreshen: m | base=main | sha=aaaaaaa\n`);
-    assert.equal(briefBudgetHours(fromBranch, repo), null, "a --from-branch run has no budget, even when its file has a bad line");
-  } finally {
-    rmSync(repo, { recursive: true, force: true });
   }
 });
 
