@@ -4,6 +4,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/github/license/federbenjamin/agent-build" alt="License"></a>
+  <a href="https://github.com/federbenjamin/agent-build/releases/latest"><img src="https://img.shields.io/github/v/release/federbenjamin/agent-build" alt="Release"></a>
   <a href=".github/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/federbenjamin/agent-build/ci.yml" alt="CI"></a>
 </p>
 

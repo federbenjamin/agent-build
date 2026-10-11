@@ -20,5 +20,5 @@ The `/build` system: the skill (`skills/build/`), its runtime scripts (`runtime/
 
 ## Project state
 
-- 2026-10-07: not launched — no release yet. Retires at the first version tag.
+- 2026-10-10: launched — v0.1.0 is released and public, so other people may have it installed. Retires if the repo is archived.
 - 2026-10-07: the project holds no user data; a run reads and writes the user's own repos and state folders on their machine, and its PRs go to the user's own remotes. Retires if it ever stores or sends data anywhere else.
