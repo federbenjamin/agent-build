@@ -8,6 +8,6 @@
 | `agents/<name>.md` | each build agent's prompt and frontmatter; the plugin loads them as `agent-build:<name>` |
 | `agents.json` | each build agent's declaration: `name`, `description`, models, Codex settings, `context` |
 | `hooks/` | `hooks.json` registers `no-push-guard.sh` on every Bash call (README.md §The no-push guard) |
-| `docs/` | the reference pages the README links (`configuration.md`, `design.md`, `build-events.md`, this file), and `media/`: each diagram's Mermaid source (`.mmd`), its rendered `.svg`, and `diagrams.sh`, which renders them |
+| `docs/` | the reference pages the README links (`configuration.md`, `design.md`, `build-events.md`, this file), and `media/`: each diagram's Mermaid source (`.mmd`), its rendered `.svg`, and `diagrams.sh`, which renders them; `hero.png`, the README's top picture, which `hero.sh` re-takes by filming the staged run in `hero-scene.sh` |
 | `tests/` | repo-level tests: `steps.ts` resolution, `install.sh`, `agents.json` against `agents/` |
 | `install.sh` | makes the `~/.agent-build` links and enables the plugin |

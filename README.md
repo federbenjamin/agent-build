@@ -15,6 +15,10 @@ system as a Claude Code plugin: the skill, its twelve agents, the runtime script
 a guard that keeps a subagent from pushing. It is for anyone who works in a repo with Claude Code and
 wants a whole unit of work carried through by one command, under their own branch and merge rules.
 
+<p align="center"><img src="docs/media/hero.png" alt="A terminal showing one /build run on a fixture repo, todo-cli, adding a --json flag. BRIEF: prior-art finds code to reuse, brief-writer commits the brief before any code, and the class is R1. BUILD: two builders in their own worktrees and a test-author, then the merge. CLOSE: a wave of five readers at once, reviewTable.ts builds a fix table of 9 rows, a fresh fixer fixes them, two readers and the hand tester re-check, a second table of 2 rows goes to a second fresh fixer, then all clean. SHIP: checks pass, one push, a draft PR, shipGate.ts passes, and the PR is squash-merged" width="900"></p>
+
+One run from request to merged PR, staged from a fixture by [docs/media/hero.sh](docs/media/hero.sh).
+
 ## Install
 
 What a run needs on PATH:
@@ -224,6 +228,8 @@ git config core.hooksPath .githooks
 ```
 
 To change a diagram, edit its `.mmd` file under `docs/media/` and run `docs/media/diagrams.sh`.
+To re-take the top picture, edit `docs/media/hero-scene.sh` and run `docs/media/hero.sh` (needs
+[vhs](https://github.com/charmbracelet/vhs)).
 
 ## License
 
