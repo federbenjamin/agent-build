@@ -18,11 +18,13 @@ allow auto-merge (a new GitHub repo does not). A repo's own `merge` step replace
 
 | variable | what lives there | default |
 | --- | --- | --- |
-| `AGENT_BUILD_STORE` | the build steps, notes, and briefs of a repo whose `git config agents.profile` is `public`, at `<store>/<owner>/<name>/`; a repo without that key keeps them in its own `.claude/` and never reads the store | `~/.local/state/agent-build/store` |
+| `AGENT_BUILD_STORE` | a git repo outside your code repos, a folder per repo at `<store>/<owner>/<name>/`. Every brief goes there unless the repo's build notes name a briefs dir in its tree, so a run commits no brief into a repo that never asked for one. A repo whose `git config agents.profile` is `public` keeps its build steps and notes there too; any other repo keeps them in its own `.claude/`. The first run that needs the store makes it a local git repo; give it a remote and each run pushes it | `~/.local/state/agent-build/store` |
 | `AGENT_BUILD_RUN_ROOT` | each run's dir: its ledger, reader findings, fix tables, hand-test files | `~/.local/state/agent-build/runs` |
 | `SESSION_LOGS_DIR` | session logs, when you keep them; a run writes to one only when it is set | none |
 
 `node ~/.agent-build/runtime/lib/repoId.ts .` prints the store and the run root as resolved.
+
+Review telemetry is per repo and has no variable: `agent-build/review-telemetry.jsonl` in the repo's git common dir (`.git/` in a plain clone), shared by every worktree. A runtime that finds the file 0.1.0 wrote at `.claude/run-state/review-telemetry.jsonl` moves its rows there on first use.
 
 ## Codex (optional)
 

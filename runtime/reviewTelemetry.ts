@@ -1,7 +1,8 @@
 /**
- * CLI + helpers: review telemetry for the `/build` review — per-run rows appended to the gitignored
- * `.claude/run-state/review-telemetry.jsonl` of the repo under build (cwd; its main working tree when
- * cwd is a linked worktree). Every number is counted HERE, from the run dir's files — never by an LLM.
+ * CLI + helpers: review telemetry for the `/build` review — per-run rows appended to
+ * `agent-build/review-telemetry.jsonl` in the git common dir of the repo under build (cwd), the same
+ * file from every worktree (`lib/runState.ts`). Every number is counted HERE, from the run dir's
+ * files — never by an LLM.
  *
  *   --ingest <run-dir> --pipeline build --ref <r> --run-id <id> --class R<n> [--file <jsonl>]
  *   --report [--since YYYY-MM-DD] [--file <jsonl>]
@@ -56,7 +57,7 @@ import {
   STAGES,
   type TableJson,
 } from "./lib/runFiles.ts";
-import { appendJsonl, readJsonl, resolveRunStateDir } from "./lib/runState.ts";
+import { appendJsonl, readJsonl, runStateFile } from "./lib/runState.ts";
 import { Shape } from "./lib/shape.ts";
 import { roundIntake } from "./lib/table.ts";
 import { readLedger, readTable, UsageError } from "./reviewTable.ts";
@@ -1154,7 +1155,7 @@ export function formatReport(rows: readonly TelemetryRow[], since?: string, floo
 // ── CLI ──────────────────────────────────────────────────────────────────────────────────────
 
 export function defaultLog(): string {
-  return join(resolveRunStateDir(), "review-telemetry.jsonl");
+  return runStateFile("review-telemetry.jsonl");
 }
 
 const USAGE =

@@ -1,4 +1,4 @@
-/** The fallbacks a repo with no build steps runs on: install and tests from its package files, a PR opened with
+/** The fallbacks a repo with no build steps runs on: install and tests from its package files, a push of a fresh branch by name, a PR opened with
  *  SHIP's body, and a merge that reaches the base branch whether or not the repo allows auto-merge. */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -81,6 +81,38 @@ test("the pr_open fallback takes SHIP's title and body file, never a body filled
   );
   assert.ok(ship.includes("draft the PR body into `<inputs-dir>/pr-body.txt` while it runs"), "SHIP writes the body where the flag reads it");
 });
+
+/** A clone of a bare remote with one commit on main, and a branch `feat/x` cut from origin/main
+ *  with one more commit, its upstream as `upstream` sets it; then the push fallback run through `sh`. */
+function runPush(upstream: "origin/main" | "none"): { status: number | null; stderr: string; git: (...args: string[]) => string } {
+  const root = mkdtempSync(join(tmpdir(), "push-fallback-"));
+  const remote = join(root, "remote.git");
+  const work = join(root, "work");
+  const env = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t", GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" };
+  const git = (...args: string[]) => {
+    const r = spawnSync("git", args, { cwd: work, encoding: "utf8", env });
+    assert.equal(r.status, 0, `git ${args.join(" ")}: ${r.stderr}`);
+    return r.stdout.trim();
+  };
+  spawnSync("git", ["init", "--bare", "-b", "main", remote], { env });
+  spawnSync("git", ["clone", remote, work], { env });
+  git("commit", "--allow-empty", "-m", "base");
+  git("push", "origin", "main");
+  git(...(upstream === "none" ? ["switch", "--no-track", "-c", "feat/x", "origin/main"] : ["switch", "--track", "-c", "feat/x", "origin/main"]));
+  git("commit", "--allow-empty", "-m", "work");
+  const run = spawnSync("/bin/sh", ["-c", FALLBACKS.push!], { cwd: work, encoding: "utf8", env });
+  return { status: run.status, stderr: run.stderr, git };
+}
+
+for (const upstream of ["origin/main", "none"] as const) {
+  test(`the push fallback pushes a fresh branch by name and tracks it (upstream before: ${upstream})`, () => {
+    const r = runPush(upstream);
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.git("rev-parse", "origin/feat/x"), r.git("rev-parse", "HEAD"), "the branch reached origin under its own name");
+    assert.equal(r.git("rev-parse", "origin/main"), r.git("rev-parse", "HEAD~1"), "main on origin is untouched");
+    assert.equal(r.git("rev-parse", "--abbrev-ref", "@{upstream}"), "origin/feat/x");
+  });
+}
 
 /** Runs the merge fallback through `sh` with a fake `gh` that logs each call. `auto` is how the
  *  repo answers `--auto`: allowed, or refused as on a new repo; `ready` is the answer to `pr ready`. */

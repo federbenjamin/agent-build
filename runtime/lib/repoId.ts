@@ -1,8 +1,10 @@
 /**
- * Where a repo's build files live. A repo whose `git config agents.profile` reads `public` tracks
- * nothing private, so its build steps, build notes, and briefs live in the store, a private git
- * repo outside it: `<storeRoot>/<owner>/<name>/` (`build-steps.toml`, `briefs/<branch-slug>.md`,
- * and the notes file that steps file's `notes` line names). Any other repo keeps them in its own tree.
+ * Where a repo's build files live. The store is a git repo outside every code repo, with a folder
+ * per repo: `<storeRoot>/<owner>/<name>/`. Every brief lives there (`briefs/<branch-slug>.md`)
+ * unless the repo's notes name a briefs dir in its tree, so a repo whose owner never chose one
+ * gets no brief in its history. A repo whose `git config agents.profile` reads `public` tracks
+ * nothing private: its build steps and notes live there too (`build-steps.toml`, and the notes
+ * file that steps file's `notes` line names). Any other repo keeps those in its own tree.
  *
  * The store root is `$AGENT_BUILD_STORE`, else `~/.local/state/agent-build/store`. The run root,
  * under which every build run keeps its run dir, is `$AGENT_BUILD_RUN_ROOT`, else
@@ -10,19 +12,22 @@
  *
  * This file is the only parser of `origin` and of the ledger's `store:` prefix (`briefLocation`).
  *
- *   node repoId.ts [repo-dir]
+ *   node repoId.ts [repo-dir] [--init-store]
  *
  *   repo: <owner>/<name>          (`none` when origin is absent or does not parse)
  *   profile: <public|private|unset>
  *   store: <dir>                  (`none` with no origin)
  *   run-root: <dir>
+ *
+ * `--init-store` first makes `<store>/briefs/` (`initStore`), so a first run on a machine with no
+ * store can commit a brief there.
  */
 
-import { realpathSync } from "node:fs";
+import { mkdirSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve, sep } from "node:path";
 
-import { type ExecFn, gitTry } from "./gitOps.ts";
+import { type ExecFn, gitOut, gitTry } from "./gitOps.ts";
 import { isMain } from "./isMain.ts";
 
 export interface RepoId {
@@ -85,6 +90,15 @@ export function storeDir(repo: string, opts: Opts = {}): string {
   return join(storeRoot(), id.owner, id.name);
 }
 
+/** `storeDir(repo)` with its `briefs/` folder made. A store root no git repo holds yet is
+ *  `git init`ed: a local store with no remote, which SHIP leaves unpushed. Returns the store dir. */
+export function initStore(repo: string, opts: Opts = {}): string {
+  const dir = storeDir(repo, opts);
+  mkdirSync(join(dir, "briefs"), { recursive: true });
+  if (gitTry(["rev-parse", "--git-dir"], run(dir, opts)) === null) gitOut(["init", "-q"], run(storeRoot(), opts));
+  return dir;
+}
+
 /** `path` through realpath, a missing tail kept as written (macOS `/tmp` is `/private/tmp`). */
 function real(path: string): string {
   const abs = resolve(path);
@@ -116,8 +130,10 @@ export function briefLocation(value: string, repo: string, opts: Opts = {}): { c
 }
 
 if (isMain(import.meta.url)) {
-  const repo = resolve(process.argv[2] ?? ".");
+  const args = process.argv.slice(2);
+  const repo = resolve(args.find((a) => !a.startsWith("--")) ?? ".");
   try {
+    if (args.includes("--init-store")) initStore(repo);
     const id = repoId(repo);
     const profile = repoProfile(repo);
     console.log(`repo: ${id === null ? "none" : `${id.owner}/${id.name}`}`);

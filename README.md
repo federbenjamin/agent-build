@@ -60,7 +60,7 @@ execute the files these links reach, so repointing them moves every running buil
 ## Features
 
 - **One command from a request to a merged PR.** `/build <request>` writes the brief, builds each part with its own agent, reviews the diff with a wave of readers and up to four fix rounds, hand-tests the result, and ships it through your repo's own push, PR and merge commands.
-- **Your commands, mapped once.** Each repo names its install, checks, tests, push, PR and merge commands in `.claude/build-steps.toml`; a repo without one runs on the built-in defaults (`npm test`, `git push`, `gh pr create`, `gh pr merge`) and the run's record says so.
+- **Your commands, mapped once.** Each repo names its install, checks, tests, push, PR and merge commands in `.claude/build-steps.toml`; a repo without one runs on the built-in defaults (`npm test`, `git push -u origin HEAD`, `gh pr create`, `gh pr merge`) and the run's record says so.
 - **Twelve agents with one job each.** Brief writer, builders, reviewers, fixers, test author, hand tester and more, spawned as `agent-build:<name>`, each with its own model and context.
 - **No agent grades its own work.** The brief is committed before the code, tests come from writers who did not write the code, and every fix is made by a fresh agent and re-read by a fresh reader.
 - **A subagent never pushes.** A hook refuses a push or a PR open, ready, edit or merge from any subagent, in the built-in `git`/`gh` forms and in your repo's own steps, and logs each refusal.
@@ -86,7 +86,27 @@ of a `-p` prompt:
 claude -p --permission-mode auto "/build <path to the request file>"
 ```
 
+The exit code of a headless run says nothing about the build: a run that stopped before its PR
+exits 0, with the reason only in its final message. A launcher learns the outcome from the
+[build events](#build-events): the build shipped only when it sends `finished` with
+`outcome: merged`. A `blocked` event names in `needs` what the run is waiting on, and `finished` with
+`outcome: unmerged` means it stopped with its PR unmerged.
+
 `/build --from-branch <name>` runs the review and ship stops over a branch nobody briefed.
+
+### What a run leaves in your repo
+
+While a run is live, `git status` in your checkout shows `?? .claude/`: the run's worktrees. Leave
+it out of your commits. Once the session's last PR merges, the run removes its worktrees and deletes
+its local branches, so the checkout is as it was before. Some things stay:
+
+- A run waiting on you (a draft PR with open questions) keeps its worktree and branch until it merges.
+- A worktree with uncommitted or untracked files is kept, and the run's last message names it.
+- A branch that neither main nor a merged PR holds is kept, and the run reports it.
+- If you started the session inside a worktree, that worktree is yours and stays.
+
+Outside your files, each run's record goes to the run root ([docs/configuration.md](docs/configuration.md)),
+and review telemetry goes to `.git/agent-build/review-telemetry.jsonl`, which `git status` never shows.
 
 ### Permission mode
 

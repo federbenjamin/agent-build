@@ -2,13 +2,13 @@
  *  location, and the CLI, over real throwaway repos. */
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { briefLocation, inStore, parseOrigin, repoId, repoProfile, storeDir, storeRoot } from "../lib/repoId.ts";
+import { briefLocation, initStore, inStore, parseOrigin, repoId, repoProfile, storeDir, storeRoot } from "../lib/repoId.ts";
 
 // Strip inherited GIT_* before anything spawns git (docs/rules/tests.md §Tests): an inherited
 // GIT_DIR (a hook) would answer the origin and profile probes from another repo.
@@ -106,6 +106,31 @@ test("briefLocation: `store:` is a path under the store dir; anything else is th
       assert.equal(inStore(join(repo, "docs", "x.md")), false);
       assert.equal(inStore(`${store}-other/x.md`), false, "a sibling folder whose name starts with the store's is not in it");
     });
+  });
+});
+
+test("initStore: a first run makes the store a git repo at its root; an existing store gains only the folder", () => {
+  withDir((dir) => {
+    const repo = join(dir, "repo");
+    mkdirSync(repo);
+    git(repo, "init", "-q");
+    git(repo, "remote", "add", "origin", "git@github.com:o/r.git");
+    const store = join(dir, "fresh", "store");
+    withStoreEnv(store, () => {
+      assert.equal(initStore(repo), join(store, "o", "r"));
+      assert.equal(existsSync(join(store, "o", "r", "briefs")), true);
+      assert.equal(git(join(store, "o", "r"), "rev-parse", "--show-toplevel").trim(), realpathSync(store));
+      initStore(repo);
+      assert.equal(git(store, "rev-list", "--all").trim(), "", "a second call commits nothing and inits nothing");
+    });
+    const cloned = join(dir, "cloned");
+    mkdirSync(cloned);
+    git(cloned, "init", "-q");
+    const r = spawnSync("node", [SCRIPT, repo, "--init-store"], { encoding: "utf8", env: { ...process.env, AGENT_BUILD_STORE: cloned } });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, new RegExp(`^store: ${cloned}/o/r$`, "m"));
+    assert.equal(existsSync(join(cloned, "o", "r", "briefs")), true);
+    assert.equal(existsSync(join(cloned, "o", "r", ".git")), false, "a store already in a git repo is not inited again");
   });
 });
 
