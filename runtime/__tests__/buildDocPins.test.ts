@@ -510,7 +510,7 @@ test("dry-run 10 and 11: the first leftovers ticket has an owner, and the teleme
   const close = stop("CLOSE.md");
   assert.match(step(close, 13), /\*\*No ticket yet\*\*[^\n]*you, the orchestrating session, create it now with the notes' ticket skill \(`\/file-linear-ticket` where the notes name it\) — one standing ticket per plan/);
   assert.match(step(close, 13), /Until it exists[^\n]*the ledger says `pr-body`/);
-  assert.match(step(close, 14), /in the MAIN checkout[^\n]*`dangerouslyDisableSandbox: true`[^\n]*A dry run skips the ingest/);
+  assert.match(step(close, 14), /in the repo's git common dir, outside the run tree[^\n]*`dangerouslyDisableSandbox: true`[^\n]*A dry run skips the ingest/);
 });
 
 test("dry-run 13: the fixer names the DB-lane tests its tree cannot run, and CLOSE runs the DB gate on that line", () => {
@@ -656,6 +656,7 @@ test("CLOSE §Trees: a run tree per open run, entered with EnterWorktree; never 
   assert.match(trees, /The first call after entering, and after any compaction, is `git rev-parse --abbrev-ref HEAD`[^\n]*`branch=`/);
   assert.match(trees, /`run <runid> is on <b>; this tree is on <c> — enter the run's tree first`/);
   assert.match(trees, /SHIP runs one run at a time, in merge order/);
+  assert.match(trees, /takes each run by `git switch -c <branch> <start>` in it[^\n]*the harness's `worktree-<name>`[^\n]*After the switch, `~\/\.agent-build\/runtime\/git-delete-merged\.sh <that branch>`/);
 });
 
 test("CLOSE §Trees: every read has a review tree; the verifier and the simplifier read their own isolated trees", () => {

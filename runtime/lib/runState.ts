@@ -1,11 +1,12 @@
 /**
  * The per-repo run-state dir and the JSONL primitives its ledgers share — `reviewTelemetry.ts`'s
- * review log. The dir belongs to the repo under build (its main working tree), never to this
- * runtime's own checkout.
+ * review log. The dir belongs to the repo under build, never to this runtime's own checkout: it is
+ * `agent-build/` inside the repo's git common dir, so `git status` never shows it, no ignore line is
+ * needed, and removing a worktree never drops it.
  */
 
 import { execFileSync } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmdirSync, unlinkSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 export type GitCommonDirResolver = () => string;
@@ -16,24 +17,20 @@ const gitCommonDir: GitCommonDirResolver = () =>
     stdio: ["ignore", "pipe", "pipe"],
   }).trim();
 
-// comment-ok: the worktree-deletion failure this anchoring prevents is the whole reason for it
-// Anchor the logs to the MAIN working tree's `.claude/run-state/` of the repo under build (cwd) —
-// from a linked worktree the cwd's own dir is gitignored and `git worktree remove` deletes it,
-// silently dropping every run logged from it. `git rev-parse --git-common-dir`'s parent is
-// stable across worktrees. The cwd-relative fallback (git absent) is LOUD, never silent.
-export function resolveRunStateDir(
+// The git common dir is the same from every worktree of the repo. The cwd-relative fallback (git
+// absent) is LOUD, never silent.
+function resolveRunStateDir(
   resolveCommonGitDir: GitCommonDirResolver = gitCommonDir
 ): string {
   const scriptRelative = join(process.cwd(), ".claude", "run-state");
   const warnFallback = (cause: string) =>
     console.error(
       `runState: ${cause}; anchoring run state to ${scriptRelative} — from a linked ` +
-        "worktree this dir is gitignored and dropped by `git worktree remove`, so runs " +
-        "logged here can be lost"
+        "worktree `git worktree remove` drops this dir, so runs logged here can be lost"
     );
   try {
     const commonGitDir = resolveCommonGitDir();
-    if (commonGitDir) return join(dirname(commonGitDir), ".claude", "run-state");
+    if (commonGitDir) return join(commonGitDir, "agent-build");
     warnFallback("git returned an empty common-dir");
     return scriptRelative;
   } catch (err) {
@@ -45,6 +42,34 @@ export function resolveRunStateDir(
     warnFallback(`could not resolve the git common-dir (${stderr || message})`);
     return scriptRelative;
   }
+}
+
+/** `<run-state dir>/<name>`, after appending the file of that name from the main working tree's
+ *  `.claude/run-state/`, where 0.1.0 wrote it, and deleting that copy (and its dir, once empty). */
+export function runStateFile(
+  name: string,
+  resolveCommonGitDir: GitCommonDirResolver = gitCommonDir
+): string {
+  const file = join(resolveRunStateDir(resolveCommonGitDir), name);
+  let legacyDir: string;
+  try {
+    legacyDir = join(dirname(resolveCommonGitDir()), ".claude", "run-state");
+  } catch {
+    return file;
+  }
+  const legacy = join(legacyDir, name);
+  if (legacy === file || !existsSync(legacy)) return file;
+  const text = readFileSync(legacy, "utf8");
+  mkdirSync(dirname(file), { recursive: true });
+  if (text.trim().length > 0) appendFileSync(file, text.endsWith("\n") ? text : text + "\n");
+  unlinkSync(legacy);
+  try {
+    rmdirSync(legacyDir);
+  } catch {
+    // not empty: something else still lives there
+  }
+  console.error(`runState: moved ${legacy} into ${file}`);
+  return file;
 }
 
 /** Every row of a JSONL ledger. A missing file is an empty log; a corrupt LINE throws naming

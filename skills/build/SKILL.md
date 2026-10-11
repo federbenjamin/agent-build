@@ -8,10 +8,10 @@ description: >-
   a script builds, each checked by a fresh read and by the hand tester running the brief's
   claims), SHIP (checks, push, draft PR, marker, gate, merge). Every repo command is a step from
   the repo's .claude/build-steps.toml; a repo without one runs on stated fallbacks and says so in
-  the ledger. Starts in its own worktree of the target repo, which whoever launches it sets up;
-  `/build --from-branch <name>` runs CLOSE and SHIP over a branch nobody briefed.
+  the ledger. Runs in the asking session, inside the target repo, in a worktree it enters itself.
+  Use when the user says "build X" or hands over a bug fix, refactor, or feature; `/build
+  --from-branch <name>` runs CLOSE and SHIP over a branch nobody briefed.
 argument-hint: "<what to build>"
-disable-model-invocation: true
 ---
 
 # /build — one unit, four stops
@@ -36,9 +36,8 @@ You own everything around the agents: the brief, the class, the worktrees, the s
 
 Every script this skill names lives in `~/.agent-build/runtime` and runs as `node ~/.agent-build/runtime/<script>` from the run's tree. Type the path out; a shell variable in its place is refused in a worktree session. In a `buildEvent.ts` line every value goes in single quotes, each `'` in it typed `'\''`: in double quotes, a `$(…)` or a backtick in a title, branch, or `needs` would run.
 
-**You start in place.** /build starts in its own worktree of the target repo; whoever launches it sets that up. That worktree is the launch tree (CLOSE §Trees).
+**Start in the repo.** /build runs in the asking session, which must sit inside the target repo; outside it, stop with one `needs you` line naming the repo. From the main checkout, call `EnterWorktree` with no `path` before step 1: the harness makes a worktree under `.claude/worktrees/`, the one place it enters without asking. The tree you then sit in is the launch tree (CLOSE §Trees).
 
-0. **A repo that still carries its own `/build`.** If `.claude/skills/build/SKILL.md` exists at the repo root (the top folder of the tree you are in) and is not this file, the repo has not moved to this skill yet: Read that file and follow it instead, and stop reading this one. The personal skill shadows the project one by name, so this line is what keeps an unmigrated branch on its own flow.
 1. **Steps.** `node ~/.agent-build/runtime/steps.ts .` prints the resolved table: each step, `repo` or `fallback`, and its command or `(none)`. This skill names steps, never commands — `<size>`, `<checks>`, `<push>` below mean "the command that table resolves". A `(none)` step is skipped and the skip is said on its ledger line; `codex_role` is `(none)` when `codex` is not on PATH: Codex is optional (BUILD step 8, CLOSE step 2); a step whose command exits non-zero is a STOP with the command echoed, never a silent skip. `node ~/.agent-build/runtime/steps.ts . --get <step>` prints one command.
 2. **Numbers.** `node ~/.agent-build/runtime/thresholds.ts .` prints every threshold this skill names (`PART_MAX_LINES`, `TEST_SLICE_MAX_FUNCTIONS`, `SMALL_WORK_BELOW_BUCKET`, `BATCH_SHIP_BUCKET`, and the CLOSE ones) with `repo` or `default` beside it. `SUBAGENT_MAX`, `CODEX_MAX`, `CODEX_PAIR_MIN_SIZE`, and `CODEX_PAIR_MIN_CLASS` come from this table too; a session contract that sets `subagent_max`, `codex_max`, `codex_pair_min_size`, or `codex_pair_min_class` (a session override included) wins over it. `builder_model` is the contract's alone, `auto` without one.
 3. **Notes.** `node ~/.agent-build/runtime/steps.ts . --get notes` names the repo's build notes. Read its `## build` section now; it is part of this skill for this repo — the repo's brief and decision docs, its doc corpus, its DB and stack procedures, its exercise and hand-test commands, its freshen additions, its ticket tracker and PR-open flags. `(none)` means this skill runs on its generic text alone.

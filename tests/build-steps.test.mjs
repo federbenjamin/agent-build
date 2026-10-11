@@ -28,7 +28,7 @@ test("a repo with no file gets every fallback and says it was absent", () => {
     r.steps.map((s) => [s.step, s.command, s.source]),
     Object.entries(FALLBACKS).map(([k, v]) => [k, k === "codex_role" && !codexOnPath() ? null : v, "fallback"])
   );
-  assert.equal(byStep(r).push.command, "git push");
+  assert.equal(byStep(r).push.command, "git push -u origin HEAD");
   assert.equal(byStep(r).db_gate.command, null);
 });
 

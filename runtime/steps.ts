@@ -11,7 +11,8 @@
 // and `install` to the frozen install of its pnpm or npm lockfile.
 // `pr_open` takes SHIP's `--title` and `--body-file` flags (gh refuses it without them, so the body
 // is never filled from commits); `merge` readies the draft, then turns on auto-merge, or merges at
-// once where the repo does not allow auto-merge.
+// once where the repo does not allow auto-merge. `push` names the branch: a branch cut from origin/main
+// tracks origin/main or nothing, and a bare `git push` refuses both.
 //   node steps.ts [repo-dir] [--json | --get <step>]
 //   node steps.ts --template <repo name>     the build-steps.toml a new repo starts from
 import { accessSync, constants, existsSync, readFileSync, statSync } from "node:fs";
@@ -27,7 +28,7 @@ const RUNTIME = `node ${/^[\w./~-]+$/.test(HERE) ? HERE : `'${HERE.replaceAll("'
 
 export const FALLBACKS: Record<string, string | null> = {
   size: `${RUNTIME}/size.ts`, signals: null, checks: null, exit_checks: null, fix_checks: null, tests: null,
-  install: null, db_gate: null, manifest: null, mutation_proof: null, push: "git push",
+  install: null, db_gate: null, manifest: null, mutation_proof: null, push: "git push -u origin HEAD",
   pr_open: "gh pr create --draft", merge: "gh pr ready && gh pr merge --auto --squash || gh pr merge --squash",
   codex_role: `${RUNTIME}/codexRole.ts`, push_stats: null, thresholds: null, notes: null,
 };

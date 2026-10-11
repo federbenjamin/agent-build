@@ -118,6 +118,10 @@ test("SHIP: the run tree, one drift group then drift-merge, the batch's Todo fli
   assert.match(five, /flip its session-log Todo line \(`- \[ \] \[<batch branch>\] batch: ship …`\) to `\[x\]`/);
   assert.match(five, /every part's worktree and every fixer's worktree/);
   assert.match(five, /\*\*The run tree\*\*, when it is not the launch tree: `EnterWorktree`/);
+  const launch = five.indexOf("**The launch tree**");
+  const branches = five.indexOf("**The run's branches**");
+  assert.ok(launch >= 0 && branches > launch, "SHIP step 5 removes the launch tree before it deletes the branches");
+  assert.match(five, /when this was the session's last unit and Start's `EnterWorktree` made the tree: `ExitWorktree` with `action: "keep"` \(never `"remove"`\)/);
 });
 
 test("the test-author manifest description states the U21 verdict's branch K", () => {
