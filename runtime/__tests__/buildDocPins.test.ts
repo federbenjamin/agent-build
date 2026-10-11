@@ -699,7 +699,7 @@ test("CLOSE step 1: freshen writes branch=, and a build line entered at CLOSE ca
 
 test("CLOSE step 4: the fixer gets every part's handoff note and the run tree, and reaches the stack by the copy rule", () => {
   const four = step(stop("CLOSE.md"), 4);
-  assert.match(four, /every part's handoff note, one per part \(`<part worktree>\/\.claude\/run-state\/handoff\.md` for a builder part, `none` for a `session` part/);
+  assert.match(four, /every part's handoff note, one per part \(`<run-dir>\/builder-P<k>\/handoff\.md` for builder part `P<k>`, `none` for a `session` part/);
   assert.match(four, /the run tree \(absolute: the fixer copies the stack's bindings from it, 4e\)/);
   assert.match(four, /4e\.[^\n]*A fixer whose diff changes no schema file the notes name reaches the run's stack by the notes' copy rule/);
   assert.doesNotMatch(four, /cannot reach the local stack/);

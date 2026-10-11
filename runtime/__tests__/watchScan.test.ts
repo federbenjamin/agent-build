@@ -172,10 +172,10 @@ test("off-part fires at WATCH_OFF_PART_FILES distinct off-part paths, not one be
   assert.deepEqual(flags(withPart(three), ctx(2)), [`off-part=${N}`]);
 });
 
-test("off-part never counts run state, a path outside cwd, or a path a glob entry matches", () => {
+test("off-part never counts a builder's notes in the run dir, a path outside cwd, or a path a glob entry matches", () => {
   const recs = [
     prompt(0),
-    ...editIn(1, ".claude/run-state/ledger.md"),
+    ...editIn(1, "/Users/me/.local/state/agent-build/runs/w-fix-x/build-1/builder-P1/work-log.md", "Write"),
     ...editIn(1, "/tmp/claude/build-r1/notes.txt", "Write"),
     ...editIn(1, "/w/other-tree/src/q.ts"),
     ...editIn(1, "/Users/me/.claude/agent-memory/builder/x.md", "Write"),

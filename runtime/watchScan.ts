@@ -16,7 +16,7 @@
  *     one `ack: --ack …` line per flag); exit 0 quiet · 3 a flag · 2 usage or unreadable input
  *     `--part-files` gives an `--agent` its part's entries (`briefCheck.ts --files <P<k>|W<k>>`'s
  *     output, one per line); only such an agent gets the `off-part` flag: the distinct paths it
- *     edited inside its transcript's cwd, outside `.claude/run-state/`, that match no entry.
+ *     edited inside its transcript's cwd that match no entry.
  *
  * A live segment starts at the first prompt, at a message from the coordinator or a peer, at any
  * user message that is not harness-injected, and at any user record that arrives after the agent
@@ -323,9 +323,6 @@ export type WatchLimitKey =
 /** Agent types the `no-edit` flag watches (the part after a plugin prefix `x:`). */
 export const EDIT_BEARING = new Set(["builder", "fixer", "test-author"]);
 
-/** Edits under this cwd-relative folder are run state, never a part's code. */
-const RUN_STATE_DIR = ".claude/run-state/";
-
 export interface WatchedAgent {
   name: string;
   /** From `agent-<id>.meta.json`; null when absent (then `no-edit` does not apply). */
@@ -361,14 +358,13 @@ interface FlagRule {
 const maxOf = (m: Map<string, number>): number => Math.max(0, ...m.values());
 const bareType = (t: string | null): string | null => (t === null ? null : t.slice(t.lastIndexOf(":") + 1));
 
-/** Distinct edited paths inside their record's cwd, outside run state, that match no part entry. */
+/** Distinct edited paths inside their record's cwd that match no part entry. */
 export function offPartCount(edited: ReadonlyMap<string, string | null>, partFiles: readonly string[]): number {
   let n = 0;
   for (const [path, cwd] of edited) {
     if (cwd === null) continue;
     const rel = relative(resolve(cwd), path);
     if (rel === "" || rel === ".." || rel.startsWith("../") || isAbsolute(rel)) continue;
-    if (rel.startsWith(RUN_STATE_DIR)) continue;
     if (!matchesTarget(rel, partFiles)) n++;
   }
   return n;

@@ -211,11 +211,12 @@ test("CODEX.1: a reader the wave line names with no file fails", async () => {
   });
 });
 
-test("CURSORY.7: a repo reader's file the wave line does not name, and a misnamed file, fail", async () => {
+test("CURSORY.7: a repo reader's file the wave line does not name, and a misnamed file, fail; a builder's notes folder does not", async () => {
   await withRun(async (run) => {
     noFindingsRun(run);
     run.write("comment-reader.md", "NO FINDINGS\n");
     run.write("security_review.md", "NO FINDINGS\n");
+    run.write("builder-P1/handoff.md", "choices:\n- none\n");
     assert.deepEqual((await facts(run)).failures, [
       "comment-reader.md: in the run dir, but it is no reader's file — name its repo reader on `wave: … | repo: <agent>`, or rename it",
       "security_review.md: in the run dir, but it is no reader's file — name its repo reader on `wave: … | repo: <agent>`, or rename it",
