@@ -1,0 +1,59 @@
+{
+  "status": "initial",
+  "report": "initial classifiers report (2026-10-22): an initial setup, sanity-checked on 15 recorded runs, not tuned",
+  "model": "jev-1.14.0",
+  "cutoff": 0.5,
+  "combine": "mean",
+  "fields": {
+    "diff": {
+      "input": "diff",
+      "shape": "production-code",
+      "maxChars": 60000,
+      "note": {
+        "field": "diff_note",
+        "text": "the change's diff, production code only: tests, docs, config and data files, lockfiles and generated copies left out. Each @@ line shows the line numbers where a hunk sits in its file."
+      }
+    }
+  },
+  "questions": {
+    "adds_named_code": {
+      "type": "noul",
+      "instructions": "Look only at the production code this change adds. Does it add new functions, methods, classes, components, types, or exported names, or new files, rather than only editing the bodies of existing ones?",
+      "criteria": {
+        "true": "The change adds at least one new function, method, class, component, type, exported name, or file.",
+        "false": "The change only edits lines inside existing functions, or changes text, values, or names."
+      }
+    },
+    "named_code_added": {
+      "type": "score",
+      "instructions": "How much new named code (functions, methods, components, types, exported names, new files) does the production code in this change add?",
+      "criteria": [
+        "None.",
+        "One or two small additions.",
+        "Several new functions or one new file.",
+        "Many new functions, or several new files.",
+        "A new module or subsystem with many functions and files."
+      ]
+    },
+    "grows_long_file": {
+      "type": "noul",
+      "instructions": "Using the line numbers on the @@ lines, does the change add a substantial amount of code to files that are already long, with hunks starting several hundred lines or more into a file?",
+      "criteria": {
+        "true": "A good part of the added code lands deep inside files that are already hundreds of lines long.",
+        "false": "The added code sits in short files or new files, or only a few lines are added to a long one."
+      }
+    }
+  },
+  "features": [
+    {
+      "input": "size-report",
+      "pattern": "\"counted\":\\s*\\d{1,2}(?!\\d)",
+      "weight": -0.2
+    },
+    {
+      "input": "size-report",
+      "pattern": "\"counted\":\\s*\\d{4,}",
+      "weight": 0.2
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "status": "initial",
+  "report": "initial classifiers report (2026-10-22): an initial setup, sanity-checked on 15 recorded runs, not tuned; the any-of question split into one question per area, combined by maximum (G4); shaped by security-surface since 2026-10-23 (graph tune plan, unit A), which keeps CI workflows, plists, auth and RLS paths, config.toml and env examples",
+  "model": "jev-1.14.0",
+  "cutoff": 0.5,
+  "combine": "max",
+  "fields": {
+    "diff": {
+      "input": "diff",
+      "shape": "security-surface",
+      "maxChars": 60000,
+      "note": {
+        "field": "diff_note",
+        "text": "the change's diff, production code and the security-relevant config only: CI workflows, plists, auth and RLS paths, config.toml and env examples kept; tests, docs, other config and data files, lockfiles and generated copies left out"
+      }
+    }
+  },
+  "questions": {
+    "identity_or_access": {
+      "type": "noul",
+      "instructions": "Look only at the production code this change adds or edits. Does it touch authentication, identity, sessions, permissions, roles, or access rules?",
+      "criteria": {
+        "true": "The changed code creates, checks, changes, or relies on who a caller is or what a caller may do.",
+        "false": "The changed code does nothing with identity, sessions, permissions, roles, or access rules."
+      }
+    },
+    "secrets": {
+      "type": "noul",
+      "instructions": "Look only at the production code this change adds or edits. Does it handle secrets, keys, tokens, passwords, or credentials: reading, storing, passing on, logging, or comparing them?",
+      "criteria": {
+        "true": "The changed code reads, stores, passes on, logs, or compares a secret, key, token, password, or credential.",
+        "false": "The changed code handles no secret, key, token, password, or credential."
+      }
+    },
+    "built_from_outside_input": {
+      "type": "noul",
+      "instructions": "Look only at the production code this change adds or edits. Does it build a shell command, SQL statement, file path, or URL from outside input, such as user input, a request, file contents, or another program's output?",
+      "criteria": {
+        "true": "The changed code puts outside input into a shell command, SQL statement, file path, or URL.",
+        "false": "The changed code builds no command, query, path, or URL from outside input: what it builds comes from constants or the program's own values."
+      }
+    },
+    "network_input": {
+      "type": "noul",
+      "instructions": "Look only at the production code this change adds or edits. Does it open a network listener, or accept and act on input that arrives over a network?",
+      "criteria": {
+        "true": "The changed code listens on a port or socket, or handles requests, messages, or webhooks that arrive over a network.",
+        "false": "The changed code opens no listener and handles no input that arrives over a network."
+      }
+    }
+  },
+  "features": []
+}

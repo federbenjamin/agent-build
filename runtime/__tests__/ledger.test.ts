@@ -1,4 +1,6 @@
 /** The ship ledger's grammar (`lib/ledger.ts`): every §1.8 line form, and every refusal. */
+import "./helpers/operatorEnv.ts";
+
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
@@ -26,13 +28,13 @@ const FULL = ledger(
   "steps: .claude/build-steps.toml | fallback: none | none: none",
   `build: model=opus | agent=a1b2c3 | sha=${A}`,
   `freshen: ${A} | base=origin/main | sha=${A}`,
-  `wave: review-cursory, gate-silent-failure-hunter, build-verifier, security-review | skipped: simplifier — 40 < 100 | codex: review-cursory | repo: comment-reader | sha=${A}`,
+  `wave: review, silent-failures, completeness, security | skipped: simplifier — 40 < 100 | codex: review | repo: comment-reader | sha=${A}`,
   `verifier: CLEAN | sha=${A}`,
   `fix-1: 3/4 | model=opus | agent=f1 | from=${A} | sha=${B}`,
-  `confirm-1: review-cursory-codex, gate-silent-failure-hunter, security-review | sha=${B}`,
+  `confirm-1: review-codex, silent-failures, security | sha=${B}`,
   `hand-test-1: 2/3 | sha=${B}`,
   `fix-2: 1/1 | model=opus | agent=f2,f3 | from=${B} | sha=${C}`,
-  `confirm-2: review-cursory (codex failed: exit 2: no out file) | sha=${C}`,
+  `confirm-2: review (codex failed: exit 2: no out file) | sha=${C}`,
   `hand-test-2: 3/3 | sha=${C}`,
   "leftovers: QRK-12 | rows=2 | scope=plan-QRK-5",
   `ship: https://github.com/o/r/pull/9 | sha=${C}`
@@ -48,14 +50,14 @@ test("a whole flow-2 ledger parses into its typed lines", () => {
   assert.deepEqual(l.build, { model: "opus", agents: ["a1b2c3"], sha: A });
   assert.equal(l.base, "origin/main");
   assert.equal(l.branch, null);
-  assert.deepEqual(l.waveReaders, ["review-cursory", "gate-silent-failure-hunter", "build-verifier", "security-review"]);
+  assert.deepEqual(l.waveReaders, ["review", "silent-failures", "completeness", "security"]);
   assert.deepEqual(l.waveRepoReaders, ["comment-reader"]);
   assert.deepEqual(l.verifier, { verdict: "CLEAN", sha: A });
   assert.deepEqual(l.fixes.get("fix-1"), { fixed: 3, rows: 4, model: "opus", agents: ["f1"], from: A, sha: B });
   assert.deepEqual(l.reads.get("confirm-1")?.readers.map((r) => r.reader), [
-    "review-cursory-codex",
-    "gate-silent-failure-hunter",
-    "security-review",
+    "review-codex",
+    "silent-failures",
+    "security",
   ]);
   assert.deepEqual(l.handTests, [
     { n: 1, skipped: false, pass: 2, ran: 3, sha: B },
@@ -106,21 +108,21 @@ test("a ledger without `flow: 2` throws with the restart message", () => {
 // ── R.7: reader lists split on `,` only; the Codex stand-in token ─────────────────────────
 
 test("a read line's readers split on `,` only, and the Codex stand-in keeps a why with a colon and spaces", () => {
-  const l = parseLedger(ledger(`confirm-1: review-cursory (codex failed: exit 1: check refused line 4), security-review | sha=${A}`));
+  const l = parseLedger(ledger(`confirm-1: review (codex failed: exit 1: check refused line 4), security | sha=${A}`));
   assert.deepEqual(l.reads.get("confirm-1")?.readers, [
-    { reader: "review-cursory", codexFailed: "exit 1: check refused line 4" },
-    { reader: "security-review", codexFailed: null },
+    { reader: "review", codexFailed: "exit 1: check refused line 4" },
+    { reader: "security", codexFailed: null },
   ]);
   assert.throws(
-    () => parseLedger(ledger(`confirm-1: review-cursory-codex security-review | sha=${A}`)),
-    /`review-cursory-codex security-review` is not a reader/
+    () => parseLedger(ledger(`confirm-1: review-codex security | sha=${A}`)),
+    /`review-codex security` is not a reader/
   );
   assert.throws(
-    () => parseLedger(ledger(`confirm-1: review-cursory (codex failed: exit 1, no file) | sha=${A}`)),
+    () => parseLedger(ledger(`confirm-1: review (codex failed: exit 1, no file) | sha=${A}`)),
     /no `,` or `\|` in <why>/
   );
   assert.throws(() => parseLedger(ledger(`last-read: fixer | sha=${A}`)), /`fixer` is not a reader/);
-  assert.throws(() => parseLedger(ledger(`confirm-1: security-review, security-review | sha=${A}`)), /names one reader twice/);
+  assert.throws(() => parseLedger(ledger(`confirm-1: security, security | sha=${A}`)), /names one reader twice/);
 });
 
 test("fix lines take one or two agent ids; `build:` with model=session takes agent=none", () => {
@@ -175,26 +177,26 @@ test("`freshen:` takes branch=; runBranchError passes the run's branch and a led
   const without = parseLedger(ledger(`freshen: merged | base=main | sha=${A}`));
   assert.equal(without.branch, null);
   assert.equal(runBranchError(without, "quick/other", "/r/build-17-4"), null, "a run in flight at the cutover runs unchecked");
-  assert.throws(() => parseLedger(ledger(`wave: review-cursory | branch=quick/x | sha=${A}`)), /takes no `branch=` field/);
+  assert.throws(() => parseLedger(ledger(`wave: review | branch=quick/x | sha=${A}`)), /takes no `branch=` field/);
 });
 
 // ── R.3 and R.4: the drift read's start and the run's base are ledger facts ───────────────
 
-test("`drift-read:` carries from= and files= and reads with review-cursory only; `freshen:` carries base=", () => {
-  const l = parseLedger(ledger(`freshen: ${A} | base=5defa1028 | sha=${A}`, `drift-read: review-cursory | from=${B} | files=3 | sha=${C}`));
+test("`drift-read:` carries from= and files= and reads with review only; `freshen:` carries base=", () => {
+  const l = parseLedger(ledger(`freshen: ${A} | base=5defa1028 | sha=${A}`, `drift-read: review | from=${B} | files=3 | sha=${C}`));
   assert.equal(l.base, "5defa1028");
   assert.deepEqual(l.driftGroups[0]?.read, {
-    readers: [{ reader: "review-cursory", codexFailed: null }],
+    readers: [{ reader: "review", codexFailed: null }],
     from: B,
     files: 3,
     sha: C,
   });
-  assert.throws(() => parseLedger(ledger(`drift-read: review-cursory | files=3 | sha=${C}`)), /needs a `from=` field/);
-  assert.throws(() => parseLedger(ledger(`drift-read: review-cursory-codex | from=${B} | files=3 | sha=${C}`)), /reads with `review-cursory` only/);
+  assert.throws(() => parseLedger(ledger(`drift-read: review | files=3 | sha=${C}`)), /needs a `from=` field/);
+  assert.throws(() => parseLedger(ledger(`drift-read: review-codex | from=${B} | files=3 | sha=${C}`)), /reads with `review` only/);
   assert.throws(
-    () => parseLedger(ledger(`drift-read: review-cursory, security-review | from=${B} | files=3 | sha=${C}`)),
-    /reads with `review-cursory` only/,
-    "security-review reads a fix at confirm-1 and confirm-2 only"
+    () => parseLedger(ledger(`drift-read: review, security | from=${B} | files=3 | sha=${C}`)),
+    /reads with `review` only/,
+    "security reads a fix at confirm-1 and confirm-2 only"
   );
   assert.throws(() => parseLedger(ledger(`freshen: ${A} | sha=${A}`)), /`freshen:` needs a `base=` field/);
 });
@@ -204,8 +206,8 @@ test("`drift-read:` carries from= and files= and reads with review-cursory only;
 const D = "ddddddd";
 const E = "eeeeeee";
 const group = (from: string, read: string, fix?: string) => [
-  `drift-read: review-cursory | from=${from} | files=1 | sha=${read}`,
-  ...(fix ? [`drift-fix: 1/1 | model=opus | agent=d1 | from=${read} | sha=${fix}`, `drift-confirm: review-cursory-codex | sha=${fix}`] : []),
+  `drift-read: review | from=${from} | files=1 | sha=${read}`,
+  ...(fix ? [`drift-fix: 1/1 | model=opus | agent=d1 | from=${read} | sha=${fix}`, `drift-confirm: review-codex | sha=${fix}`] : []),
 ];
 
 test("one drift group per build: a second `drift-read:` fails, naming `drift-merge:`", () => {
@@ -241,7 +243,7 @@ test("`drift-merge: | from= | sha=` follows the complete drift group, may repeat
     /`drift-confirm:` follows a `drift-merge:`/,
     "a drift-merge before the group's confirm"
   );
-  assert.throws(() => parseLedger(ledger(...group(A, B), `drift-merge: review-cursory | from=${B} | sha=${C}`)), /names no reader and no agent/);
+  assert.throws(() => parseLedger(ledger(...group(A, B), `drift-merge: review | from=${B} | sha=${C}`)), /names no reader and no agent/);
   assert.throws(() => parseLedger(ledger(...group(A, B), `drift-merge: | sha=${C}`)), /needs a `from=` field/);
 });
 
@@ -256,8 +258,8 @@ test("TEXT-CURSORY.5: a second `leftovers:` line (the last count stands) and a s
 
 test("a drift group keeps its order: read, then fix, then confirm", () => {
   const fix = `drift-fix: 1/1 | model=opus | agent=d1 | from=${B} | sha=${C}`;
-  const confirm = `drift-confirm: review-cursory-codex | sha=${C}`;
-  const read = `drift-read: review-cursory | from=${A} | files=1 | sha=${B}`;
+  const confirm = `drift-confirm: review-codex | sha=${C}`;
+  const read = `drift-read: review | from=${A} | files=1 | sha=${B}`;
   assert.throws(() => parseLedger(ledger(fix, read)), /`drift-fix:` comes before any `drift-read:`/);
   assert.throws(() => parseLedger(ledger(read, confirm)), /`drift-confirm:` has no `drift-fix:` in its group/);
   assert.throws(() => parseLedger(ledger(read, fix, fix)), /two `drift-fix:` lines in the drift group/);
@@ -270,11 +272,11 @@ test("a drift group keeps its order: read, then fix, then confirm", () => {
 });
 
 test("a field the move does not take, a repeated field, or a bad value throws", () => {
-  assert.throws(() => parseLedger(ledger(`confirm-1: review-cursory-codex | rows=2 | sha=${A}`)), /takes no `rows=` field/);
-  assert.throws(() => parseLedger(ledger(`confirm-1: review-cursory-codex | sha=${A} | sha=${B}`)), /two `sha=` fields/);
-  assert.throws(() => parseLedger(ledger("confirm-1: review-cursory-codex | sha=HEAD")), /sha=HEAD is not a git sha/);
+  assert.throws(() => parseLedger(ledger(`confirm-1: review-codex | rows=2 | sha=${A}`)), /takes no `rows=` field/);
+  assert.throws(() => parseLedger(ledger(`confirm-1: review-codex | sha=${A} | sha=${B}`)), /two `sha=` fields/);
+  assert.throws(() => parseLedger(ledger("confirm-1: review-codex | sha=HEAD")), /sha=HEAD is not a git sha/);
   assert.throws(() => parseLedger(ledger("leftovers: pr-body | rows=two")), /rows=two is not a count/);
-  assert.throws(() => parseLedger(ledger("confirm-1: review-cursory-codex")), /needs a `sha=` field/);
+  assert.throws(() => parseLedger(ledger("confirm-1: review-codex")), /needs a `sha=` field/);
 });
 
 // ── hand-test, verifier, leftovers forms ──────────────────────────────────────────────────
@@ -318,7 +320,7 @@ test("fix4: a later `verifier:` line (a later read owed the verifier) parses, an
 
 test("fix4: past the first two lines order carries no meaning — `banked:`, `verifier:`, and a SHIP-time `hand-test-<n>:` may follow `ship:`", () => {
   const body = [
-    `wave: review-cursory | sha=${A}`,
+    `wave: review | sha=${A}`,
     `fix-1: 1/2 | model=opus | agent=f1 | from=${A} | sha=${B}`,
     `hand-test-1: 1/1 | sha=${B}`,
     "leftovers: pr-body | rows=1 | scope=plan-QRK-5",
@@ -400,12 +402,12 @@ test("unbank: the answered ids, from= and sha=, and a fixer's model= and agent=;
       "banked: CURSORY.3 (awaiting operator)",
       "banked: HAND.2, SESSION.1 (awaiting operator)",
       `unbank: CURSORY.3, HAND.2 | from=${A} | sha=${B} | model=opus | agent=u1`,
-      `unbank-read: review-cursory | sha=${B}`
+      `unbank-read: review | sha=${B}`
     )
   );
   assert.deepEqual(l.banked, ["CURSORY.3", "HAND.2", "SESSION.1"]);
   assert.deepEqual(l.unbank, { ids: ["CURSORY.3", "HAND.2"], from: A, sha: B, model: "opus", agents: ["u1"] });
-  assert.deepEqual(l.unbankRead, { readers: [{ reader: "review-cursory", codexFailed: null }], sha: B, from: null, files: null });
+  assert.deepEqual(l.unbankRead, { readers: [{ reader: "review", codexFailed: null }], sha: B, from: null, files: null });
   const bySession = parseLedger(ledger(`unbank: CURSORY.3 | from=${A} | sha=${B}`));
   assert.deepEqual(bySession.unbank, { ids: ["CURSORY.3"], from: A, sha: B, model: null, agents: [] });
   assert.equal(bySession.unbankRead, null);
@@ -423,12 +425,12 @@ test("answered: each line names one decision row the session answered and the SE
   assert.throws(() => parseLedger(ledger("answered: CURSORY.3, CODEX.1 | by=SESSION.2")), /is not a finding id/);
 });
 
-test("unbank: refusals — a non-id, a half-named fixer, a second line, and a read by anyone but review-cursory", () => {
+test("unbank: refusals — a non-id, a half-named fixer, a second line, and a read by anyone but review", () => {
   assert.throws(() => parseLedger(ledger(`unbank: CURSORY.3 (awaiting operator) | from=${A} | sha=${B}`)), /is not a finding id/);
   assert.throws(() => parseLedger(ledger(`unbank: CURSORY.3 | from=${A} | sha=${B} | model=opus`)), /both `model=` and `agent=`, or by neither/);
   assert.throws(() => parseLedger(ledger(`unbank: CURSORY.3 | sha=${B}`)), /needs a `from=` field/);
   const u = `unbank: CURSORY.3 | from=${A} | sha=${B}`;
   assert.throws(() => parseLedger(ledger(u, u)), /two `unbank:` lines/);
-  assert.throws(() => parseLedger(ledger(`unbank-read: review-cursory-codex | sha=${B}`)), /reads with `review-cursory` only/);
-  assert.throws(() => parseLedger(ledger(`unbank-read: review-cursory, security-review | sha=${B}`)), /reads with `review-cursory` only/);
+  assert.throws(() => parseLedger(ledger(`unbank-read: review-codex | sha=${B}`)), /reads with `review` only/);
+  assert.throws(() => parseLedger(ledger(`unbank-read: review, security | sha=${B}`)), /reads with `review` only/);
 });

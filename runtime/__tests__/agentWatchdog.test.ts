@@ -13,6 +13,8 @@
 //   - an agent finishing WHILE the watchdog polls is picked up (the live-transition path);
 //   - no paths → exit 2; --help → usage, exit 0.
 
+import "./helpers/operatorEnv.ts";
+
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import {
@@ -314,7 +316,7 @@ test("--codex: a Codex run finishes when its out file appears", async () => {
   const dir = makeDir();
   try {
     const log = join(dir, "codex.log");
-    const out = join(dir, "review-cursory-codex.md");
+    const out = join(dir, "review-codex.md");
     writeFileSync(log, "codex exec started\n");
     writeFileSync(out, "");
     const child = spawn("bash", [SCRIPT, "--flags", "--poll", "1", "--codex", `${log}:${out}`], { cwd: dir });
@@ -334,7 +336,7 @@ test("--codex: a Codex run finishes when its out file appears", async () => {
       });
     });
     assert.equal(status, 0, stdout);
-    assert.match(stdout, /AGENT review-cursory-codex finished/);
+    assert.match(stdout, /AGENT review-codex finished/);
     assert.match(stdout, /WATCHDOG done/);
   } finally {
     rmSync(dir, { recursive: true, force: true });

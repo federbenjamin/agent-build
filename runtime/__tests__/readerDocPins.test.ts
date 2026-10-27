@@ -5,6 +5,8 @@
  * The last block pins the agent-file rules build-flow-v2 landing 2 changed: the Skill tool's
  * removal, the isolated simplifier, and the builder's and fixer's lookup, lane, and stack rules.
  */
+import "./helpers/operatorEnv.ts";
+
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -18,14 +20,14 @@ const read = (agent: string) => readFileSync(join(AGENTS, `${agent}.md`), "utf8"
 
 /** The reader files this pin owns. */
 const READER_FILES = [
-  "review-cursory",
-  "gate-silent-failure-hunter",
-  "security-review",
+  "review",
+  "silent-failures",
+  "security",
   "simplifier",
   "gate-warden",
   "prior-art",
-  "test-author",
-  "build-verifier",
+  "write-tests",
+  "completeness",
 ] as const;
 
 const BLOCK_TAGS = ["finding-block", "stage-file"] as const;
@@ -37,9 +39,9 @@ function taggedBlocks(text: string): { tag: BlockTag; body: string }[] {
   return [...text.matchAll(re)].map((m) => ({ tag: m[2] as BlockTag, body: m[3]! }));
 }
 
-test("every finding-block and stage-file example in review-cursory.md parses", () => {
+test("every finding-block and stage-file example in review.md parses", () => {
   const counts: Record<BlockTag, number> = { "finding-block": 0, "stage-file": 0 };
-  for (const { tag, body } of taggedBlocks(read("review-cursory"))) {
+  for (const { tag, body } of taggedBlocks(read("review"))) {
     counts[tag]++;
     if (tag === "finding-block") {
       // The example is a wave block, so its ids must sit in the wave's range too.
@@ -53,8 +55,8 @@ test("every finding-block and stage-file example in review-cursory.md parses", (
     }
     assert.doesNotMatch(body, /^- fix:/m, "a reader writes `after:`, never `fix:`");
   }
-  assert.ok(counts["finding-block"] >= 1, "review-cursory.md needs a ```finding-block example");
-  assert.ok(counts["stage-file"] >= 1, "review-cursory.md needs a ```stage-file example");
+  assert.ok(counts["finding-block"] >= 1, "review.md needs a ```finding-block example");
+  assert.ok(counts["stage-file"] >= 1, "review.md needs a ```stage-file example");
 });
 
 test("no reader file keeps the tier grammar or any memory", () => {
@@ -80,23 +82,23 @@ function tableRows(text: string): [string, string][] {
 }
 const ticked = (cell: string) => [...cell.matchAll(/`([^`]+)`/g)].map((m) => m[1]!);
 
-test("review-cursory's kinds table names every kind the parser takes, once", () => {
-  const kinds = tableRows(read("review-cursory"))
+test("review's kinds table names every kind the parser takes, once", () => {
+  const kinds = tableRows(read("review"))
     .map(([first]) => ticked(first))
     .filter((t) => t.length === 1 && (KINDS as readonly string[]).includes(t[0]!))
     .map((t) => t[0]!);
   assert.deepEqual([...kinds].sort(), [...KINDS].sort());
 });
 
-test("review-cursory's id-range table matches the parser's stage ranges", () => {
+test("review's id-range table matches the parser's stage ranges", () => {
   const ranges = new Map<string, string>();
-  for (const [first, second] of tableRows(read("review-cursory"))) {
+  for (const [first, second] of tableRows(read("review"))) {
     const t = ticked(first);
     if (t.length === 1 && (STAGES as readonly string[]).includes(t[0]!)) ranges.set(t[0]!, second);
   }
   for (const stage of STAGES) {
     const { min, max } = stageIdRange(stage);
-    assert.equal(ranges.get(stage), `${min}–${max}`, `review-cursory.md gives stage ${stage} the range ${min}–${max}`);
+    assert.equal(ranges.get(stage), `${min}–${max}`, `review.md gives stage ${stage} the range ${min}–${max}`);
   }
 });
 
@@ -125,19 +127,19 @@ test("fix4 item 6: CLOSE's id-prefix table is READER_ID_PREFIX, and each reader'
     rows.filter(([a]) => !(ticked(a)[0]! in READER_ID_PREFIX)).map(([, b]) => ticked(b)[0] ?? b),
     ["its own — the notes name it", "SESSION", "HAND"]
   );
-  // Each agent file names its own ids; review-cursory's Rubric names every global one, and CODEX.
+  // Each agent file names its own ids; review's Rubric names every global one, and CODEX.
   const own: Record<string, string> = {
-    "gate-silent-failure-hunter": "HUNTER",
-    "security-review": "SEC",
-    "build-verifier": "VERIFIER",
+    "silent-failures": "HUNTER",
+    security: "SEC",
+    completeness: "VERIFIER",
     simplifier: "SIMP",
   };
   for (const [agent, prefix] of Object.entries(own)) {
     assert.equal(prefix, READER_ID_PREFIX[agent]);
     assert.ok(read(agent).includes(`ids \`${prefix}.<n>\``), `${agent}.md names its ids \`${prefix}.<n>\``);
   }
-  const rubric = read("review-cursory");
-  for (const prefix of ["CURSORY", "HUNTER", "SEC", "VERIFIER", "SIMP"]) assert.ok(rubric.includes(`\`${prefix}.1\``), `review-cursory.md §Rubric names ${prefix}`);
+  const rubric = read("review");
+  for (const prefix of ["CURSORY", "HUNTER", "SEC", "VERIFIER", "SIMP"]) assert.ok(rubric.includes(`\`${prefix}.1\``), `review.md §Rubric names ${prefix}`);
   assert.ok(rubric.includes("A paired Codex read of this role uses `CODEX.<n>`"));
 });
 
@@ -145,11 +147,11 @@ test("dry-run 12: every CLOSE reader returns one line of an exact shape, and its
   // CLOSE: the session reads each agent's one-line report, never a finding. A reader that returns
   // paragraphs puts findings where the table script never reads them.
   const shapes: Record<string, string> = {
-    "review-cursory": "`review-cursory — <n> findings, file written`",
-    "gate-silent-failure-hunter": "`gate-silent-failure-hunter — <n> findings, file written`",
-    "security-review": "`security-review — <n> findings, file written`",
+    review: "`review — <n> findings, file written`",
+    "silent-failures": "`silent-failures — <n> findings, file written`",
+    security: "`security — <n> findings, file written`",
     simplifier: "`simplifier — <n> findings, file written`",
-    "build-verifier": "`build-verifier — <n> findings, VERDICT: <CLEAN | INCOMPLETE — <check>>, file written`",
+    completeness: "`completeness — <n> findings, VERDICT: <CLEAN | INCOMPLETE — <check>>, file written`",
   };
   for (const [agent, shape] of Object.entries(shapes)) {
     const ret = section(read(agent), "Return");
@@ -170,13 +172,13 @@ const bodyOf = (agent: string) => read(agent).replace(/^---\n[\s\S]*?\n---\n/, "
  * `bulk-edit` is a harness agent, so its half of this pin lives in the harness.
  */
 const SKILL_FREE = [
-  "review-cursory",
-  "gate-silent-failure-hunter",
-  "security-review",
+  "review",
+  "silent-failures",
+  "security",
   "gate-warden",
   "simplifier",
-  "test-author",
-  "build-verifier",
+  "write-tests",
+  "completeness",
 ] as const;
 
 test("U9: no Skill tool, and no body that sends the agent to a skill", () => {
@@ -190,8 +192,8 @@ test("U9: no Skill tool, and no body that sends the agent to a skill", () => {
   }
 });
 
-test("U9: review-cursory carries no writing-style block", () => {
-  const text = read("review-cursory");
+test("U9: review carries no writing-style block", () => {
+  const text = read("review");
   assert.doesNotMatch(text, /^## Writing style\s*$/m);
   assert.doesNotMatch(text, /ASD-STE100/);
 });
@@ -232,7 +234,7 @@ test("parts: the builder's dispatch names its part, and one lane rule holds the 
 
 test("U21 branch K: a db slice's writer is a Claude spawn on the run's stack, every other slice runs on Codex, and both write from the excerpt", () => {
   // The agent file's description is the short routing line (a084b01); the body carries branch K.
-  const body = bodyOf("test-author");
+  const body = bodyOf("write-tests");
   assert.doesNotMatch(body, /\*\*You run on Codex, not as a Claude spawn\*\*/);
   assert.match(body, /- \*\*A `plain` slice runs on Codex\*\*/);
   assert.match(body, /- \*\*A `db` slice runs as a Claude spawn in its own tree\*\* \(`isolation: "worktree"`[^\n]*the notes' copy rule[^\n]*Never start, stop, reset, or migrate the stack/);

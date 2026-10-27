@@ -3,13 +3,13 @@ model: opus — a design choice
 
 # Brief — every chat send goes through one typed write
 
-A brief in the shape before `## Parts` and `budget:` existed.
+A brief in the shape before `## Parts` existed.
 
 ## Target files
 
 - src/server/send.ts
 - packages/core/src/chat/**
-- .claude/build/notes.md — the hand-tester section
+- .claude/build/notes.md — the hand-test section
 
 ## Hand test
 

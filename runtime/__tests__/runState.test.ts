@@ -1,3 +1,5 @@
+import "./helpers/operatorEnv.ts";
+
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";

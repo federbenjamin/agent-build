@@ -2,7 +2,7 @@ flowchart LR
     subgraph BRIEF
         direction TB
         req(["request"])
-        bw["brief-writer"]
+        bw["write-brief"]
         bc(["brief,<br/>committed first"])
         req --> bw --> bc
     end
@@ -10,7 +10,7 @@ flowchart LR
     subgraph BUILD
         direction TB
         bld["builder<br/>per part"]
-        ta["test-author<br/>per slice"]
+        ta["write-tests<br/>per slice"]
         bld ~~~ ta
     end
 
@@ -20,7 +20,7 @@ flowchart LR
         table["reviewTable.ts"]
         rows{"rows?"}
         fixer["fresh fixer"]
-        recheck["fresh read,<br/>hand-tester"]
+        recheck["fresh read,<br/>hand-test"]
         open{"open<br/>question?"}
         draft(["draft PR,<br/>waits for you"])
         wave --> table --> rows

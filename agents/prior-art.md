@@ -53,3 +53,7 @@ Per component, one block: the verdict, the ownership line, the existing implemen
 ## Stamp
 
 A full sweep over a plan ends with one stamp line, the last line of your report: `Prior-art stamp: <date> · <repo>@<short sha of the read root> · reviewed: <the plan's unit ids or section headings you swept> · components: <every component you gave a verdict, comma-separated>`. The session pastes it as the first line of the plan's Prior-art section, and `/build` (BRIEF step 2) sweeps no component that line names. Name exactly what you judged: a component left off the list is swept again at BRIEF, and one listed that you did not judge is never swept. A light check or a diff review prints no stamp.
+
+## Graph runs
+
+When your dispatch is an inputs file (`inputs.json`), the graph runner dispatched you: read `~/.agent-build/docs/graph-agents.md` first; it replaces this file's §Report section for that run. A prose dispatch is today's /build, and nothing here changes it. Write what §Report asks for as `prior-art.txt` in the `prior-art` folder yourself; nothing reads your final message.

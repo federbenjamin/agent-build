@@ -3,13 +3,14 @@
  * rule, the two kind rules, refusals, the final round, and what the CLI prints and writes.
  */
 
+import "./helpers/operatorEnv.ts";
+
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
   type FinalRound,
   normaliseLocator,
-  parseFixFile,
   parseStageKey,
   parseTableJson,
   type Round,
@@ -19,6 +20,7 @@ import {
   type StageKey,
   type TableJson,
 } from "../lib/runFiles.ts";
+import { parseFixFile } from "../lib/fixFile.ts";
 import {
   applyKindRules,
   buildRound,
@@ -113,25 +115,25 @@ const leftoverIds = (r: Round) => r.leftovers.map((l) => l.row?.id ?? `advice:${
 // ── Merge ────────────────────────────────────────────────────────────────────────────────────
 
 test("merge: two findings 3 lines apart are one row; 4 lines apart are two", () => {
-  const near = wave(reader("review-cursory", blk("CURSORY.1", "a.ts:10", "behavior") + blk("CURSORY.2", "a.ts:13", "behavior")));
+  const near = wave(reader("review", blk("CURSORY.1", "a.ts:10", "behavior") + blk("CURSORY.2", "a.ts:13", "behavior")));
   assert.deepEqual(near.round.rows.map((r) => [r.id, r.also]), [["CURSORY.1", ["CURSORY.2"]]]);
-  const far = wave(reader("review-cursory", blk("CURSORY.1", "a.ts:10", "behavior") + blk("CURSORY.2", "a.ts:14", "behavior")));
+  const far = wave(reader("review", blk("CURSORY.1", "a.ts:10", "behavior") + blk("CURSORY.2", "a.ts:14", "behavior")));
   assert.deepEqual(ids(far.round.rows), ["CURSORY.1", "CURSORY.2"]);
 });
 
 test("merge: a 31-line range merges only on an exact match; a 30-line range merges on overlap", () => {
-  const long = wave(reader("review-cursory", blk("CURSORY.1", "a.ts:10-40", "behavior") + blk("CURSORY.2", "a.ts:20", "behavior")));
+  const long = wave(reader("review", blk("CURSORY.1", "a.ts:10-40", "behavior") + blk("CURSORY.2", "a.ts:20", "behavior")));
   assert.equal(long.round.rows.length, 2);
-  const exact = wave(reader("review-cursory", blk("CURSORY.1", "a.ts:10-40", "behavior") + blk("CURSORY.2", "a.ts:10-40", "behavior")));
+  const exact = wave(reader("review", blk("CURSORY.1", "a.ts:10-40", "behavior") + blk("CURSORY.2", "a.ts:10-40", "behavior")));
   assert.equal(exact.round.rows.length, 1);
-  const thirty = wave(reader("review-cursory", blk("CURSORY.1", "a.ts:10-39", "behavior") + blk("CURSORY.2", "a.ts:20", "behavior")));
+  const thirty = wave(reader("review", blk("CURSORY.1", "a.ts:10-39", "behavior") + blk("CURSORY.2", "a.ts:20", "behavior")));
   assert.equal(thirty.round.rows.length, 1);
 });
 
 test("merge: a missing finding never merges, even on the same line", () => {
   const r = wave(
-    reader("review-cursory", blk("CURSORY.1", "a.ts:10", "behavior")),
-    reader("build-verifier", blk("VERIFIER.1", "a.ts:10", "missing"))
+    reader("review", blk("CURSORY.1", "a.ts:10", "behavior")),
+    reader("completeness", blk("VERIFIER.1", "a.ts:10", "missing"))
   );
   assert.deepEqual(ids(r.round.rows), ["CURSORY.1", "VERIFIER.1"]);
 });
@@ -139,19 +141,19 @@ test("merge: a missing finding never merges, even on the same line", () => {
 test("merge: an unparsed locator never merges; another path never merges", () => {
   const r = wave(
     reader(
-      "review-cursory",
+      "review",
       blk("CURSORY.1", "the send loop", "behavior") + blk("CURSORY.2", "the send loop", "behavior") + blk("CURSORY.3", "b.ts:10", "behavior")
     ),
-    reader("review-cursory-codex", blk("CODEX.1", "c.ts:10", "behavior"))
+    reader("review-codex", blk("CODEX.1", "c.ts:10", "behavior"))
   );
   assert.equal(r.round.rows.length, 4);
 });
 
 test("merge: a merged row keeps both texts in merge order, takes the higher kind, and is transitive", () => {
   const r = wave(
-    reader("review-cursory-codex", blk("CODEX.1", "a.ts:13", "text", "codex says")),
-    reader("gate-silent-failure-hunter", blk("HUNTER.1", "a.ts:16", "security", "hunter says")),
-    reader("review-cursory", blk("CURSORY.4", "a.ts:10", "structure", "cursory says"))
+    reader("review-codex", blk("CODEX.1", "a.ts:13", "text", "codex says")),
+    reader("silent-failures", blk("HUNTER.1", "a.ts:16", "security", "hunter says")),
+    reader("review", blk("CURSORY.4", "a.ts:10", "structure", "cursory says"))
   );
   assert.equal(r.round.rows.length, 1);
   const [only] = r.round.rows;
@@ -165,7 +167,7 @@ test("merge: a merged row keeps both texts in merge order, takes the higher kind
 });
 
 test("merge: on equal kind rank the row's first finding's kind wins", () => {
-  const r = wave(reader("review-cursory", blk("CURSORY.1", "a.ts:10", "test-app") + blk("CURSORY.2", "a.ts:11", "structure")));
+  const r = wave(reader("review", blk("CURSORY.1", "a.ts:10", "test-app") + blk("CURSORY.2", "a.ts:11", "structure")));
   assert.equal(r.round.rows[0]!.kind, "test-app");
 });
 
@@ -189,7 +191,7 @@ test("kind rule: a dev-tool finding on a target file becomes behavior; test-tool
     head: "aaaaaaa",
     table: EMPTY,
     isTarget: target,
-    wave: [reader("review-cursory", blk("CURSORY.1", "src/x.ts:4", "dev-tool"))],
+    wave: [reader("review", blk("CURSORY.1", "src/x.ts:4", "dev-tool"))],
     merge: LIM,
   });
   assert.equal(r.round.rows[0]!.kind, "behavior");
@@ -210,7 +212,7 @@ test("round 1: every kind is a row; prose drift is a text row numbered after the
     head: "aaaaaaa",
     table: EMPTY,
     isTarget: () => false,
-    wave: [reader("review-cursory", `${blk("CURSORY.1", "a.ts:1", "text")}\n## Prose drift (advisory)\n- docs/x.md:3 · says 5 · is 6\n`)],
+    wave: [reader("review", `${blk("CURSORY.1", "a.ts:1", "text")}\n## Prose drift (advisory)\n- docs/x.md:3 · says 5 · is 6\n`)],
     session: {
       file: "session.md",
       text: `### SESSION.1 — red test\n- locator: b.ts:1\n- kind: behavior\n- stage: wave\n- finding: f\n- after: a\n\n### SESSION.2 — later\n- locator: c.ts:1\n- kind: behavior\n- stage: confirm-1\n- finding: f\n- after: a\n`,
@@ -225,7 +227,7 @@ test("round 1: every kind is a row; prose drift is a text row numbered after the
   assert.ok(drift.texts[0]!.finding.endsWith("says 5 · is 6"));
   assert.equal(r.round.rows[2]!.origin, "session");
   assert.deepEqual(r.round.leftovers, []);
-  assert.deepEqual(r.round.consumed, ["review-cursory.md", "session.md"]);
+  assert.deepEqual(r.round.consumed, ["review.md", "session.md"]);
 });
 
 test("round 1: a prose-drift line that reports nothing is no row; one with no locator still is", () => {
@@ -241,7 +243,7 @@ test("round 1: a prose-drift line that reports nothing is no row; one with no lo
     "- None of the docs name the new flag",
     "- Nothing in README.md says the step moved",
   ].join("\n");
-  const r = wave(reader("review-cursory", `NO FINDINGS\n\n${drift}\n`));
+  const r = wave(reader("review", `NO FINDINGS\n\n${drift}\n`));
   assert.deepEqual(ids(r.round.rows), ["CURSORY.1", "CURSORY.2", "CURSORY.3"]);
   assert.deepEqual(
     r.round.rows.map((row) => [row.locators.map((l) => l.path), row.texts[0]!.finding.replace(/^.*— /, "")]),
@@ -256,16 +258,16 @@ test("round 1: a prose-drift line that reports nothing is no row; one with no lo
 
 test("refusal: a file that fails its grammar is left out and named; the other files go through", () => {
   const bad = "### CODEX.1 — no kind\n- locator: a.ts:1\n- finding: f\n- after: a\n";
-  const r = wave(reader("review-cursory", blk("CURSORY.1", "a.ts:1", "behavior")), reader("review-cursory-codex", bad));
+  const r = wave(reader("review", blk("CURSORY.1", "a.ts:1", "behavior")), reader("review-codex", bad));
   assert.deepEqual(ids(r.round.rows), ["CURSORY.1"]);
   assert.equal(r.round.refused.length, 1);
-  assert.equal(r.round.refused[0]!.file, "review-cursory-codex.md");
+  assert.equal(r.round.refused[0]!.file, "review-codex.md");
   assert.match(r.round.refused[0]!.error, /missing `kind`/);
-  assert.deepEqual(r.round.consumed, ["review-cursory.md"]);
+  assert.deepEqual(r.round.consumed, ["review.md"]);
 });
 
 test("R.14: at the wave, a failed Codex file renamed out of the reader set leaves `refused` empty", () => {
-  const r = wave(reader("review-cursory", blk("CURSORY.1", "a.ts:1", "behavior")));
+  const r = wave(reader("review", blk("CURSORY.1", "a.ts:1", "behavior")));
   assert.deepEqual(r.round.refused, []);
 });
 
@@ -300,7 +302,7 @@ test("round 2 intake: each fixer line and stage answer routes as §1.7 says", ()
     stages: [
       stage("confirm-1", [
         [
-          "review-cursory-codex",
+          "review-codex",
           stageText([
             "- CURSORY.1 · resolved",
             "- CURSORY.2 · unresolved — still loops",
@@ -319,10 +321,10 @@ test("round 2 intake: each fixer line and stage answer routes as §1.7 says", ()
   assert.deepEqual(r.round.closed, ["CURSORY.1", "CODEX.1"]);
   assert.deepEqual(r.round.banked, [{ id: "CODEX.4", question: "product — which copy?" }]);
   assert.deepEqual(r.round.rows[0]!.history, [
-    `1: fixed ${SHA} — done; confirm-1: review-cursory-codex unresolved — still loops`,
+    `1: fixed ${SHA} — done; confirm-1: review-codex unresolved — still loops`,
   ]);
   assert.deepEqual(r.round.refused, []);
-  assert.deepEqual(r.round.consumed, ["fix-1.txt", "stage-confirm-1/review-cursory-codex.md"]);
+  assert.deepEqual(r.round.consumed, ["fix-1.txt", "stage-confirm-1/review-codex.md"]);
 });
 
 test("round 3 intake: relabel agree routes by the new kind, disagree by the old; fixed · kind= takes the higher kind", () => {
@@ -344,7 +346,7 @@ test("round 3 intake: relabel agree routes by the new kind, disagree by the old;
     stages: [
       stage("confirm-2", [
         [
-          "review-cursory-codex",
+          "review-codex",
           stageText([
             "- CURSORY.5 · agree",
             "- CURSORY.6 · disagree — it is behaviour",
@@ -369,7 +371,7 @@ test("routing: with no stage run a fixed row closes; a stage that ran but left a
     round: "2",
     table,
     fixes,
-    stages: [stage("confirm-1", [["review-cursory-codex", "## Status\n- CURSORY.1 · maybe\n\n## New\nNO FINDINGS\n"]])],
+    stages: [stage("confirm-1", [["review-codex", "## Status\n- CURSORY.1 · maybe\n\n## New\nNO FINDINGS\n"]])],
   });
   assert.deepEqual(ids(refusedCodex.round.rows), ["CURSORY.1"]);
   assert.match(refusedCodex.round.rows[0]!.history[0]!, /confirm-1: no answer/);
@@ -382,7 +384,7 @@ test("R.14: after the refused Codex file is renamed, the Sonnet stand-in answers
     round: "2",
     table,
     fixes: { "1": fix("1", [`CURSORY.1 · fixed · ${SHA} — done`]) },
-    stages: [stage("confirm-1", [["review-cursory", stageText(["- CURSORY.1 · resolved"])]])],
+    stages: [stage("confirm-1", [["review", stageText(["- CURSORY.1 · resolved"])]])],
   });
   assert.deepEqual(r.round.refused, []);
   assert.deepEqual(r.round.closed, ["CURSORY.1"]);
@@ -396,15 +398,15 @@ test("R.16: when two readers answer one row, unresolved beats resolved and disag
     fixes: { "1": fix("1", [`HUNTER.1 · fixed · ${SHA} — done`, "HUNTER.2 · dropped — not real"]) },
     stages: [
       stage("confirm-1", [
-        ["review-cursory-codex", stageText(["- HUNTER.1 · resolved", "- HUNTER.2 · agree"])],
-        ["gate-silent-failure-hunter", stageText(["- HUNTER.1 · unresolved — the catch still swallows", "- HUNTER.2 · disagree — it is real"])],
+        ["review-codex", stageText(["- HUNTER.1 · resolved", "- HUNTER.2 · agree"])],
+        ["silent-failures", stageText(["- HUNTER.1 · unresolved — the catch still swallows", "- HUNTER.2 · disagree — it is real"])],
       ]),
     ],
   });
   assert.deepEqual(ids(r.round.rows), ["HUNTER.1", "HUNTER.2"]);
   assert.equal(
     r.round.rows[0]!.history[0],
-    `1: fixed ${SHA} — done; confirm-1: review-cursory-codex resolved, gate-silent-failure-hunter unresolved — the catch still swallows`
+    `1: fixed ${SHA} — done; confirm-1: review-codex resolved, silent-failures unresolved — the catch still swallows`
   );
 });
 
@@ -414,11 +416,11 @@ test("givenRows: Codex and its stand-in get every fixed, dropped, and relabelled
     rows: ids(rows),
     round: "2",
   });
-  assert.deepEqual(givenRows(rows, f, "review-cursory-codex").map((g) => [g.id, g.line]), [["CURSORY.1", "fixed"], ["CODEX.1", "dropped"], ["SEC.1", "relabel"]]);
-  assert.deepEqual(ids(givenRows(rows, f, "review-cursory")), ["CURSORY.1", "CODEX.1", "SEC.1"]);
-  assert.deepEqual(ids(givenRows(rows, f, "gate-silent-failure-hunter")), ["CURSORY.1"]);
-  assert.deepEqual(ids(givenRows(rows, f, "security-review")), ["SEC.1"]);
-  assert.deepEqual(ids(givenRows(rows, f, "build-verifier")), []);
+  assert.deepEqual(givenRows(rows, f, "review-codex").map((g) => [g.id, g.line]), [["CURSORY.1", "fixed"], ["CODEX.1", "dropped"], ["SEC.1", "relabel"]]);
+  assert.deepEqual(ids(givenRows(rows, f, "review")), ["CURSORY.1", "CODEX.1", "SEC.1"]);
+  assert.deepEqual(ids(givenRows(rows, f, "silent-failures")), ["CURSORY.1"]);
+  assert.deepEqual(ids(givenRows(rows, f, "security")), ["SEC.1"]);
+  assert.deepEqual(ids(givenRows(rows, f, "completeness")), []);
 });
 
 test("routing: a reader file that misses a given row is refused", () => {
@@ -427,7 +429,7 @@ test("routing: a reader file that misses a given row is refused", () => {
     round: "2",
     table,
     fixes: { "1": fix("1", [`CURSORY.1 · fixed · ${SHA} — done`, `CURSORY.2 · fixed · ${SHA} — done`]) },
-    stages: [stage("confirm-1", [["review-cursory-codex", stageText(["- CURSORY.1 · resolved"])]])],
+    stages: [stage("confirm-1", [["review-codex", stageText(["- CURSORY.1 · resolved"])]])],
   });
   assert.equal(r.round.refused.length, 1);
   assert.match(r.round.refused[0]!.error, /CURSORY\.2: row given and missing/);
@@ -444,10 +446,10 @@ test("round 2: new stage findings merge with each other, never with prior rows; 
     stages: [
       stage("confirm-1", [
         [
-          "review-cursory-codex",
+          "review-codex",
           stageText(["- CURSORY.1 · unresolved — no"], [blk("CODEX.101", "a.ts:11", "behavior"), blk("CODEX.102", "z.ts:1", "text")]),
         ],
-        ["security-review", stageText([], [blk("SEC.101", "a.ts:12", "security")])],
+        ["security", stageText([], [blk("SEC.101", "a.ts:12", "security")])],
       ]),
     ],
     session: {
@@ -497,10 +499,10 @@ test("hand test: a HAND row closes on a later pass, stays open without one, and 
     text: `H2 · fail (code) · ${SHA} — hand-test-1/H2.out — empty\n`,
   };
   const fixes = { "2": fix("2", [`HAND.2 · fixed · ${SHA} — renders the retry row`]) };
-  const stages = [stage("confirm-2", [["review-cursory-codex", stageText(["- HAND.2 · resolved"])]])];
+  const stages = [stage("confirm-2", [["review-codex", stageText(["- HAND.2 · resolved"])]])];
   const noRerun = build({ round: "3", table, fixes, stages, handTests: [hand1] });
   assert.deepEqual(ids(noRerun.round.rows), ["HAND.2"]);
-  assert.deepEqual(noRerun.round.consumed, ["fix-2.txt", "stage-confirm-2/review-cursory-codex.md"]);
+  assert.deepEqual(noRerun.round.consumed, ["fix-2.txt", "stage-confirm-2/review-codex.md"]);
   const passed = build({
     round: "3",
     table,
@@ -522,7 +524,7 @@ test("escalate: only behavior, security, and missing rows go on; the rest are le
     fixes: { "3": fix("3", [`CURSORY.2 · fixed · ${SHA} — done`]) },
     stages: [
       stage("last", [
-        ["review-cursory-codex", stageText(["- CURSORY.2 · unresolved — no"], [blk("CODEX.301", "x.ts:1", "structure"), blk("CODEX.302", "y.ts:1", "behavior")])],
+        ["review-codex", stageText(["- CURSORY.2 · unresolved — no"], [blk("CODEX.301", "x.ts:1", "structure"), blk("CODEX.302", "y.ts:1", "behavior")])],
       ]),
     ],
   });
@@ -534,24 +536,24 @@ test("drift: the drift read's urgent findings are rows, the rest leftovers", () 
   const r = build({
     round: "drift-1",
     table: EMPTY,
-    stages: [stage("drift-1", [["review-cursory", stageText([], [blk("CURSORY.501", "m.ts:1", "behavior"), blk("CURSORY.502", "n.ts:1", "text")])]])],
+    stages: [stage("drift-1", [["review", stageText([], [blk("CURSORY.501", "m.ts:1", "behavior"), blk("CURSORY.502", "n.ts:1", "text")])]])],
   });
   assert.deepEqual(ids(r.round.rows), ["CURSORY.501"]);
   assert.deepEqual(leftoverIds(r.round), ["CURSORY.502"]);
-  assert.deepEqual(r.round.consumed, ["stage-drift-1/review-cursory.md"]);
+  assert.deepEqual(r.round.consumed, ["stage-drift-1/review.md"]);
 });
 
 test("CURSORY.4: a second drift group is its own round; final carries both, so group 1's unresolved row stays open", () => {
   const drift1 = build({
     round: "drift-1",
     table: tableWith({ "1": [], "2": [], "3": [], escalate: [] }),
-    stages: [stage("drift-1", [["review-cursory", stageText([], [blk("CURSORY.501", "m.ts:1", "security")])]])],
+    stages: [stage("drift-1", [["review", stageText([], [blk("CURSORY.501", "m.ts:1", "security")])]])],
   });
   assert.throws(() => build({ round: "drift-3", table: drift1.table }), /round drift-3 needs round drift-2/);
   const drift2 = build({
     round: "drift-2",
     table: drift1.table,
-    stages: [stage("drift-2", [["review-cursory", stageText([], [])]])],
+    stages: [stage("drift-2", [["review", stageText([], [])]])],
   });
   assert.deepEqual(Object.keys(drift2.table.rounds), ["1", "2", "3", "escalate", "drift-1", "drift-2"]);
   assert.equal(drift2.table.rounds["drift-1"]!.rows[0]!.id, "CURSORY.501", "group 2 never rewrites group 1's round");
@@ -559,44 +561,44 @@ test("CURSORY.4: a second drift group is its own round; final carries both, so g
     round: "final",
     table: drift2.table,
     fixes: { "drift-1": fix("drift-1", [`CURSORY.501 · fixed · ${SHA} — guarded`]) },
-    stages: [stage("drift-confirm-1", [["review-cursory-codex", stageText(["- CURSORY.501 · unresolved — still open"])]])],
+    stages: [stage("drift-confirm-1", [["review-codex", stageText(["- CURSORY.501 · unresolved — still open"])]])],
   });
   assert.deepEqual((final.round as FinalRound).open, [{ id: "CURSORY.501", kind: "security" }]);
-  assert.deepEqual(final.round.consumed, ["fix-drift-1.txt", "stage-drift-confirm-1/review-cursory-codex.md"]);
+  assert.deepEqual(final.round.consumed, ["fix-drift-1.txt", "stage-drift-confirm-1/review-codex.md"]);
 });
 
 test("CURSORY.4: a session.md drift block enters the one drift round that holds it, never two", () => {
   const session = { file: "session.md", text: "### SESSION.1 — main broke it\n- locator: m.ts:1\n- kind: behavior\n- stage: drift\n- finding: f\n- after: a\n" };
-  const drift1 = build({ round: "drift-1", table: EMPTY, session, stages: [stage("drift-1", [["review-cursory", stageText([], [])]])] });
+  const drift1 = build({ round: "drift-1", table: EMPTY, session, stages: [stage("drift-1", [["review", stageText([], [])]])] });
   assert.deepEqual(ids(drift1.round.rows), ["SESSION.1"]);
-  const drift2 = build({ round: "drift-2", table: drift1.table, session, stages: [stage("drift-2", [["review-cursory", stageText([], [])]])] });
+  const drift2 = build({ round: "drift-2", table: drift1.table, session, stages: [stage("drift-2", [["review", stageText([], [])]])] });
   assert.deepEqual(ids(drift2.round.rows), [], "group 1's round already holds SESSION.1");
-  const rebuilt1 = build({ round: "drift-1", table: drift2.table, session, stages: [stage("drift-1", [["review-cursory", stageText([], [])]])] });
+  const rebuilt1 = build({ round: "drift-1", table: drift2.table, session, stages: [stage("drift-1", [["review", stageText([], [])]])] });
   assert.deepEqual(ids(rebuilt1.round.rows), ["SESSION.1"], "re-building group 1 keeps its block");
 });
 
 test("CURSORY.8: a second file that reuses a finding id is refused, so one fix line never answers two findings", () => {
   // A repo reader's prefix is its own, so only the clash guard stands between it and a global id.
-  const r = wave(reader("review-cursory", blk("CURSORY.1", "a.ts:1", "behavior")), reader("comment-reader", blk("CURSORY.1", "z.ts:90", "behavior")));
+  const r = wave(reader("review", blk("CURSORY.1", "a.ts:1", "behavior")), reader("comment-reader", blk("CURSORY.1", "z.ts:90", "behavior")));
   assert.deepEqual(ids(r.round.rows), ["CURSORY.1"]);
   assert.deepEqual(r.round.refused.map((f) => f.file), ["comment-reader.md"]);
-  assert.match(r.round.refused[0]!.error, /finding CURSORY\.1 is also in review-cursory\.md — slice k from the second on writes <PREFIX>-<k>/);
+  assert.match(r.round.refused[0]!.error, /finding CURSORY\.1 is also in review\.md — slice k from the second on writes <PREFIX>-<k>/);
 });
 
 test("fix4: a global reader's ids take its own prefix (slice k from the second on adds -<k>), at the wave and at a stage", () => {
   const r = wave(
-    reader("review-cursory", blk("CURSORY.1", "a.ts:1", "behavior"), { slice: 1 }),
-    reader("review-cursory", blk("CURSORY.1", "z.ts:90", "behavior"), { slice: 2 }),
-    reader("security-review", blk("SECURITY.1", "b.ts:1", "security")),
+    reader("review", blk("CURSORY.1", "a.ts:1", "behavior"), { slice: 1 }),
+    reader("review", blk("CURSORY.1", "z.ts:90", "behavior"), { slice: 2 }),
+    reader("security", blk("SECURITY.1", "b.ts:1", "security")),
     reader("simplifier", blk("SIMP.1", "c.ts:1", "structure")),
-    reader("review-cursory-codex", blk("CODEX-2.1", "d.ts:1", "behavior"), { slice: 2 })
+    reader("review-codex", blk("CODEX-2.1", "d.ts:1", "behavior"), { slice: 2 })
   );
   assert.deepEqual(ids(r.round.rows).sort(), ["CODEX-2.1", "CURSORY.1", "SIMP.1"]);
   assert.deepEqual(
     r.round.refused.map((f) => [f.file, f.error]),
     [
-      ["review-cursory-2.md", "line 1: finding CURSORY.1: this reader's ids are `CURSORY-2.<n>` (CLOSE §The readers → Id prefixes), got `CURSORY`"],
-      ["security-review.md", "line 1: finding SECURITY.1: this reader's ids are `SEC.<n>` (CLOSE §The readers → Id prefixes), got `SECURITY`"],
+      ["review-2.md", "line 1: finding CURSORY.1: this reader's ids are `CURSORY-2.<n>` (CLOSE §The readers → Id prefixes), got `CURSORY`"],
+      ["security.md", "line 1: finding SECURITY.1: this reader's ids are `SEC.<n>` (CLOSE §The readers → Id prefixes), got `SECURITY`"],
     ]
   );
   const atStage = build({
@@ -604,12 +606,12 @@ test("fix4: a global reader's ids take its own prefix (slice k from the second o
     table: tableWith({ "1": [] }),
     stages: [
       stage("confirm-1", [
-        ["review-cursory-codex", stageText([], [blk("CODEX.101", "a.ts:1", "behavior")])],
-        ["security-review", stageText([], [blk("CODEX.102", "b.ts:1", "security")])],
+        ["review-codex", stageText([], [blk("CODEX.101", "a.ts:1", "behavior")])],
+        ["security", stageText([], [blk("CODEX.102", "b.ts:1", "security")])],
       ]),
     ],
   });
-  assert.deepEqual(atStage.round.refused.map((f) => f.file), ["stage-confirm-1/security-review.md"]);
+  assert.deepEqual(atStage.round.refused.map((f) => f.file), ["stage-confirm-1/security.md"]);
   assert.match(atStage.round.refused[0]!.error, /this reader's ids are `SEC\.<n>`/);
 });
 
@@ -619,7 +621,7 @@ test("CURSORY.6: a relabel the reader disagrees with keeps the row's own kind, w
     round: "3",
     table,
     fixes: { "2": fix("2", ["CURSORY.3 · relabel structure→text — only a comment"]) },
-    stages: [stage("confirm-2", [["review-cursory-codex", stageText(["- CURSORY.3 · disagree — a real 4xx loop"])]])],
+    stages: [stage("confirm-2", [["review-codex", stageText(["- CURSORY.3 · disagree — a real 4xx loop"])]])],
   });
   assert.deepEqual(r.round.rows.map((x) => [x.id, x.kind]), [["CURSORY.3", "behavior"]]);
   assert.deepEqual(r.round.leftovers, []);
@@ -629,8 +631,8 @@ test("TEXT-CURSORY.11: a `blocked` row is given to no reader and stays open with
   const table = tableWith({ "1": [row("CURSORY.1", "behavior"), row("CURSORY.2", "text")] });
   const fixes = { "1": fix("1", ["CURSORY.1 · blocked — three fixes failed the type-check", "CURSORY.2 · blocked — the doc is generated"]) };
   const f = parseFixFile(fixes["1"].text, { rows: ["CURSORY.1", "CURSORY.2"], round: "1" });
-  assert.deepEqual(givenRows(table.rounds["1"]!.rows, f, "review-cursory-codex"), []);
-  const r = build({ round: "2", table, fixes, stages: [stage("confirm-1", [["review-cursory-codex", stageText([])]])] });
+  assert.deepEqual(givenRows(table.rounds["1"]!.rows, f, "review-codex"), []);
+  const r = build({ round: "2", table, fixes, stages: [stage("confirm-1", [["review-codex", stageText([])]])] });
   assert.deepEqual(ids(r.round.rows), ["CURSORY.1"]);
   assert.deepEqual(leftoverIds(r.round), ["CURSORY.2"]);
   assert.equal(r.round.rows[0]!.history[0], "1: blocked — three fixes failed the type-check; confirm-1: no answer");
@@ -657,7 +659,7 @@ test("final: a still-open behavior row is in `open`, every round's leftovers are
     fixes: { escalate: fix("escalate", [`CURSORY.2 · fixed · ${SHA} — done`, `CURSORY.3 · fixed · ${SHA} — done`]) },
     stages: [
       stage("escalate", [
-        ["review-cursory-codex", stageText(["- CURSORY.2 · unresolved — still", "- CURSORY.3 · resolved"], [blk("CODEX.401", "k.ts:1", "dev-tool")])],
+        ["review-codex", stageText(["- CURSORY.2 · unresolved — still", "- CURSORY.3 · resolved"], [blk("CODEX.401", "k.ts:1", "dev-tool")])],
       ]),
     ],
     session: {
@@ -697,8 +699,8 @@ test("final after drift: escalate rows route on stage-escalate, drift rows on st
       "drift-1": fix("drift-1", [`CURSORY.501 · fixed · ${SHA} — done`]),
     },
     stages: [
-      stage("escalate", [["review-cursory-codex", stageText(["- CURSORY.2 · resolved"])]]),
-      stage("drift-confirm-1", [["review-cursory-codex", stageText(["- CURSORY.501 · unresolved — still drifts"])]]),
+      stage("escalate", [["review-codex", stageText(["- CURSORY.2 · resolved"])]]),
+      stage("drift-confirm-1", [["review-codex", stageText(["- CURSORY.501 · unresolved — still drifts"])]]),
     ],
   });
   const final = r.round as FinalRound;
@@ -739,14 +741,14 @@ test("bad input: a prior round missing, or a fix file missing or malformed, thro
 // ── Output ───────────────────────────────────────────────────────────────────────────────────
 
 test("table.json: the built table round-trips through serialiseTableJson", () => {
-  const r = wave(reader("review-cursory", blk("CURSORY.1", "a.ts:1-3, :9", "behavior")));
+  const r = wave(reader("review", blk("CURSORY.1", "a.ts:1-3, :9", "behavior")));
   const text = serialiseTableJson(r.table);
   assert.deepEqual(parseTableJson(text), r.table);
 });
 
 test("summary: kinds counted in KINDS order, refusals listed", () => {
   const r = wave(
-    reader("review-cursory", blk("CURSORY.1", "a.ts:1", "text") + blk("CURSORY.2", "b.ts:1", "behavior") + blk("CURSORY.3", "c.ts:1", "behavior")),
+    reader("review", blk("CURSORY.1", "a.ts:1", "text") + blk("CURSORY.2", "b.ts:1", "behavior") + blk("CURSORY.3", "c.ts:1", "behavior")),
     reader("simplifier", "nothing here\n")
   );
   assert.deepEqual(summaryLines("1", r.round), [
@@ -764,7 +766,7 @@ test("table-<round>.md: the fixer's view of each row", () => {
       { id: "CURSORY.2", finding: "loop — retries forever", after: "ends after one try", invariant: "one retry", vacuity: "500s only" },
       { id: "CODEX.1", finding: "loop — no stop on 401", after: "stops" },
     ],
-    history: [`1: fixed ${SHA} — x; confirm-1: review-cursory-codex unresolved — no`],
+    history: [`1: fixed ${SHA} — x; confirm-1: review-codex unresolved — no`],
   };
   assert.equal(
     renderRoundTable("2", emptyRound([r, row("VERIFIER.1", "missing", "the brief")])),
@@ -784,7 +786,7 @@ test("table-<round>.md: the fixer's view of each row", () => {
       "  - vacuity: 500s only",
       "- CODEX.1: loop — no stop on 401",
       "  - after: stops",
-      `- history: 1: fixed ${SHA} — x; confirm-1: review-cursory-codex unresolved — no`,
+      `- history: 1: fixed ${SHA} — x; confirm-1: review-codex unresolved — no`,
       "",
       "## VERIFIER.1 · missing",
       "",

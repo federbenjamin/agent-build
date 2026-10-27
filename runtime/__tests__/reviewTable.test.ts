@@ -5,6 +5,8 @@
  * `lib/table.ts` (`table.test.ts`).
  */
 
+import "./helpers/operatorEnv.ts";
+
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -147,8 +149,8 @@ test("check: every --stage value validates its own grammar", async () => {
 
 test("check: an invalid file prints one line per problem, each with its line", async () => {
   const dir = tempDir();
-  writeFileSync(join(dir, "review-cursory.md"), `${blk("CURSORY.1", "src/a.ts:1", "severe")}\n${blk("CURSORY.2", "src/b.ts:1", "missing")}`);
-  const r = await run(["check", "--file", "review-cursory.md", "--stage", "wave"], dir);
+  writeFileSync(join(dir, "review.md"), `${blk("CURSORY.1", "src/a.ts:1", "severe")}\n${blk("CURSORY.2", "src/b.ts:1", "missing")}`);
+  const r = await run(["check", "--file", "review.md", "--stage", "wave"], dir);
   assert.equal(r.code, 1);
   assert.equal(r.out.length, 2, r.out.join("\n"));
   assert.match(r.out[0]!, /^line 1: finding CURSORY\.1: `kind` must be one of/);
@@ -158,12 +160,12 @@ test("check: an invalid file prints one line per problem, each with its line", a
 
 test("fix4: check --stage wave holds a global reader's file to its own id prefix; a repo reader's is its own", async () => {
   const dir = tempDir();
-  writeFileSync(join(dir, "security-review.md"), blk("SECURITY.1"));
-  writeFileSync(join(dir, "review-cursory-2.md"), blk("CURSORY-2.1"));
+  writeFileSync(join(dir, "security.md"), blk("SECURITY.1"));
+  writeFileSync(join(dir, "review-2.md"), blk("CURSORY-2.1"));
   writeFileSync(join(dir, "comment-reader.md"), blk("COMMENT.1"));
-  const bad = await run(["check", "--file", "security-review.md", "--stage", "wave"], dir);
+  const bad = await run(["check", "--file", "security.md", "--stage", "wave"], dir);
   assert.deepEqual([bad.code, bad.out], [1, ["line 1: finding SECURITY.1: this reader's ids are `SEC.<n>` (CLOSE §The readers → Id prefixes), got `SECURITY`"]]);
-  assert.equal((await run(["check", "--file", "review-cursory-2.md", "--stage", "wave"], dir)).code, 0);
+  assert.equal((await run(["check", "--file", "review-2.md", "--stage", "wave"], dir)).code, 0);
   assert.equal((await run(["check", "--file", "comment-reader.md", "--stage", "wave"], dir)).code, 0);
   rmSync(dir, { recursive: true });
 });
@@ -171,7 +173,7 @@ test("fix4: check --stage wave holds a global reader's file to its own id prefix
 test("check --run-dir: a stage file answers exactly the rows its reader was given", async () => {
   const dir = runDir2();
   mkdirSync(join(dir, "stage-confirm-2"));
-  const codex = join("stage-confirm-2", "review-cursory-codex.md");
+  const codex = join("stage-confirm-2", "review-codex.md");
   const all = ["- CURSORY.1 · resolved", "- CODEX.3 · resolved", "- SIMP.4 · agree", "- CODEX.5 · disagree — it is the shape"];
   writeFileSync(join(dir, codex), stageFile(all));
   assert.deepEqual((await run(["check", "--file", codex, "--stage", "confirm-2", "--run-dir", "."], dir)).out, ["ok: 0 findings"]);
@@ -183,7 +185,7 @@ test("check --run-dir: a stage file answers exactly the rows its reader was give
   const noRunDir = await run(["check", "--file", codex, "--stage", "confirm-2"], dir);
   assert.equal(noRunDir.code, 0, "without --run-dir, coverage is not checked");
 
-  const hunter = join("stage-confirm-2", "gate-silent-failure-hunter.md");
+  const hunter = join("stage-confirm-2", "silent-failures.md");
   writeFileSync(join(dir, hunter), stageFile(["- HUNTER.2 · unresolved — the catch still swallows it", "- CURSORY.1 · resolved"]));
   const extra = await run(["check", "--file", hunter, "--stage", "confirm-2", "--run-dir", "."], dir);
   assert.equal(extra.code, 0, extra.out.join("\n"));
@@ -219,12 +221,12 @@ test("check --run-dir: every hand-test output file is in the run dir", async () 
 test("check: usage and unreadable input exit 2", async () => {
   const dir = runDir2();
   mkdirSync(join(dir, "stage-confirm-1"));
-  writeFileSync(join(dir, "stage-confirm-1", "review-cursory-codex.md"), stageFile(["- none"]));
+  writeFileSync(join(dir, "stage-confirm-1", "review-codex.md"), stageFile(["- none"]));
   writeFileSync(join(dir, "notes.md"), stageFile(["- none"]));
   const cases: [string[], RegExp][] = [
     [["check", "--file", "fix-2.txt", "--stage", "fix-9"], /--stage must be one of/],
     [["check", "--file", "nope.txt", "--stage", "wave"], /is not a file/],
-    [["check", "--file", "stage-confirm-1/review-cursory-codex.md", "--stage", "confirm-2"], /is in stage-confirm-1, not stage-confirm-2/],
+    [["check", "--file", "stage-confirm-1/review-codex.md", "--stage", "confirm-2"], /is in stage-confirm-1, not stage-confirm-2/],
     [["check", "--file", "notes.md", "--stage", "confirm-2", "--run-dir", "."], /not a reader's file name/],
     [["check", "--file", "fix-2.txt", "--stage", "fix-2", "--bogus", "x"], /unknown flag/],
   ];
@@ -241,7 +243,7 @@ test("CURSORY.4: check --run-dir reads a drift group's own round, fix file, and 
   writeTable(dir, { "drift-1": [row("CURSORY.501", "behavior")], "drift-2": [] });
   writeFileSync(join(dir, "fix-drift-1.txt"), `CURSORY.501 · fixed · ${SHA} — a is 6\n${EXIT}`);
   mkdirSync(join(dir, "stage-drift-confirm-1"));
-  const codex = join("stage-drift-confirm-1", "review-cursory-codex.md");
+  const codex = join("stage-drift-confirm-1", "review-codex.md");
   writeFileSync(join(dir, codex), stageFile(["- CURSORY.501 · resolved"]));
   for (const stage of ["drift-confirm-1", "drift-confirm"]) {
     const r = await run(["check", "--file", codex, "--stage", stage, "--run-dir", "."], dir);
@@ -249,8 +251,8 @@ test("CURSORY.4: check --run-dir reads a drift group's own round, fix file, and 
   }
   const wrong = await run(["check", "--file", codex, "--stage", "drift-confirm-2", "--run-dir", "."], dir);
   assert.match(wrong.err.join("\n"), /is in stage-drift-confirm-1, not stage-drift-confirm-2/);
-  writeFileSync(join(dir, "review-cursory-codex.md"), stageFile(["- CURSORY.501 · resolved"]));
-  const loose = await run(["check", "--file", "review-cursory-codex.md", "--stage", "drift-confirm", "--run-dir", "."], dir);
+  writeFileSync(join(dir, "review-codex.md"), stageFile(["- CURSORY.501 · resolved"]));
+  const loose = await run(["check", "--file", "review-codex.md", "--stage", "drift-confirm", "--run-dir", "."], dir);
   assert.equal(loose.code, 2);
   assert.match(loose.err.join("\n"), /--stage drift-confirm with --run-dir needs its drift group: drift-confirm-<n>/);
   const fix = await run(["check", "--file", "fix-drift-1.txt", "--stage", "fix-drift-1", "--run-dir", "."], dir);
@@ -272,9 +274,9 @@ function dispatchedIds(text: string): string[] {
 
 test("dispatch for Codex lists every fixed, dropped, and relabelled row with its texts and the fixer's line", async () => {
   const dir = runDir2();
-  const r = await run(["dispatch", "--run-dir", ".", "--stage", "confirm-2", "--reader", "review-cursory-codex", "--out", "codex.txt"], dir);
+  const r = await run(["dispatch", "--run-dir", ".", "--stage", "confirm-2", "--reader", "review-codex", "--out", "codex.txt"], dir);
   assert.equal(r.code, 0, r.err.join("\n"));
-  assert.equal(r.out[0], `stage confirm-2 · reader review-cursory-codex · rows 4 (CURSORY.1, HUNTER.2, SIMP.4, CODEX.5) · wrote ${join(dir, "codex.txt")}`);
+  assert.equal(r.out[0], `stage confirm-2 · reader review-codex · rows 4 (CURSORY.1, HUNTER.2, SIMP.4, CODEX.5) · wrote ${join(dir, "codex.txt")}`);
   const text = readFileSync(join(dir, "codex.txt"), "utf8");
   assert.deepEqual(dispatchedIds(text), ["CURSORY.1", "HUNTER.2", "SIMP.4", "CODEX.5"], "the decision row is banked, never given");
   assert.match(text, /^## HUNTER\.2 · behavior · fixed — answer resolved \| unresolved$/m);
@@ -287,7 +289,7 @@ test("dispatch for Codex lists every fixed, dropped, and relabelled row with its
   assert.match(text, /^- locators: src\/simp\.4\.ts:10-10$/m);
   assert.match(text, /^- history: 1: fixed abc1234 — earlier$/m);
   assert.match(text, /ids `CODEX\.200` to `CODEX\.299`/);
-  assert.match(text, /Your answer is `stage-confirm-2\/review-cursory-codex\.md`/);
+  assert.match(text, /Your answer is `stage-confirm-2\/review-codex\.md`/);
   rmSync(dir, { recursive: true });
 });
 
@@ -298,10 +300,10 @@ test("dispatch for another reader lists only the rows holding one of its ids; th
     assert.equal(r.code, 0, r.err.join("\n"));
     return readFileSync(join(dir, `${reader}.txt`), "utf8");
   };
-  assert.deepEqual(dispatchedIds(await given("gate-silent-failure-hunter")), ["HUNTER.2"]);
+  assert.deepEqual(dispatchedIds(await given("silent-failures")), ["HUNTER.2"]);
   assert.deepEqual(dispatchedIds(await given("simplifier")), ["SIMP.4"]);
-  assert.deepEqual(dispatchedIds(await given("review-cursory")), ["CURSORY.1", "HUNTER.2", "SIMP.4", "CODEX.5"]);
-  const verifier = await given("build-verifier");
+  assert.deepEqual(dispatchedIds(await given("review")), ["CURSORY.1", "HUNTER.2", "SIMP.4", "CODEX.5"]);
+  const verifier = await given("completeness");
   assert.deepEqual(dispatchedIds(verifier), [], "VERIFIER.6 is a decision");
   assert.match(verifier, /the one line `- none`/);
   assert.match(verifier, /Last line: `VERDICT: CLEAN` or `VERDICT: INCOMPLETE — <check>`/);
@@ -310,12 +312,12 @@ test("dispatch for another reader lists only the rows holding one of its ids; th
 
 test("dispatch and check agree: a stage file that answers every dispatched row passes check --run-dir", async () => {
   const dir = runDir2();
-  for (const reader of ["review-cursory-codex", "gate-silent-failure-hunter", "simplifier", "build-verifier", "security-review"]) {
+  for (const reader of ["review-codex", "silent-failures", "simplifier", "completeness", "security"]) {
     await run(["dispatch", "--run-dir", dir, "--stage", "confirm-2", "--reader", reader, "--out", `${reader}.txt`], dir);
     const text = readFileSync(join(dir, `${reader}.txt`), "utf8");
     const status = [...text.matchAll(/^## (\S+) · \S+ · (\S+) — /gm)].map((m) => `- ${m[1]} · ${m[2] === "fixed" ? "resolved" : "agree"}`);
     const file = join("stage-confirm-2", `${reader}.md`);
-    const verdict = reader === "build-verifier" ? "\nVERDICT: CLEAN" : "";
+    const verdict = reader === "completeness" ? "\nVERDICT: CLEAN" : "";
     writeFileSync(join(dir, file), `${stageFile(status.length > 0 ? status : ["- none"])}${verdict}\n`);
     const r = await run(["check", "--file", file, "--stage", "confirm-2", "--run-dir", dir], dir);
     assert.deepEqual([r.code, r.err], [0, []], `${reader}: ${r.out.join("\n")}`);
@@ -326,16 +328,16 @@ test("dispatch and check agree: a stage file that answers every dispatched row p
 test("R.6: dispatch into a fresh run dir leaves the stage folder in place", async () => {
   const fresh = tempDir();
   assert.equal(existsSync(join(fresh, "stage-drift-1")), false);
-  const r = await run(["dispatch", "--run-dir", fresh, "--stage", "drift-1", "--reader", "review-cursory", "--out", join(fresh, "d.txt")], fresh);
+  const r = await run(["dispatch", "--run-dir", fresh, "--stage", "drift-1", "--reader", "review", "--out", join(fresh, "d.txt")], fresh);
   assert.equal(r.code, 0, r.err.join("\n"));
   assert.equal(existsSync(join(fresh, "stage-drift-1")), true);
-  const bare = await run(["dispatch", "--run-dir", fresh, "--stage", "drift", "--reader", "review-cursory", "--out", join(fresh, "d.txt")], fresh);
+  const bare = await run(["dispatch", "--run-dir", fresh, "--stage", "drift", "--reader", "review", "--out", join(fresh, "d.txt")], fresh);
   assert.equal(bare.code, 2, "CURSORY.4: a drift dispatch names its group");
   assert.match(bare.err.join("\n"), /--stage must be one of .*drift-<n> \| drift-confirm-<n>, got drift/);
   assert.match(readFileSync(join(fresh, "d.txt"), "utf8"), /the one line `- none`/);
 
   const dir = runDir2();
-  const c1 = await run(["dispatch", "--run-dir", dir, "--stage", "confirm-1", "--reader", "review-cursory-codex", "--out", "c1.txt"], dir);
+  const c1 = await run(["dispatch", "--run-dir", dir, "--stage", "confirm-1", "--reader", "review-codex", "--out", "c1.txt"], dir);
   assert.equal(c1.code, 0, c1.err.join("\n"));
   assert.match(c1.out[0]!, /· rows 0 · /, "round 1 had no rows, so no fix-1.txt is needed");
   assert.equal(existsSync(join(dir, "stage-confirm-1")), true);
@@ -346,9 +348,9 @@ test("R.6: dispatch into a fresh run dir leaves the stage folder in place", asyn
 test("dispatch: usage and unreadable input exit 2, and a failed dispatch creates no stage folder", async () => {
   const dir = runDir2();
   const cases: [string[], RegExp][] = [
-    [["--stage", "wave", "--reader", "review-cursory"], /--stage must be one of confirm-1/],
+    [["--stage", "wave", "--reader", "review"], /--stage must be one of confirm-1/],
     [["--stage", "confirm-2", "--reader", "comment-reader"], /--reader must be one of/],
-    [["--stage", "last", "--reader", "review-cursory-codex"], /table\.json has no round 3/],
+    [["--stage", "last", "--reader", "review-codex"], /table\.json has no round 3/],
     [["--stage", "confirm-2", "--reader", "simplifier", "--out", "no/such/dir/x.txt"], /--out directory .* does not exist/],
   ];
   for (const [argv, says] of cases) {

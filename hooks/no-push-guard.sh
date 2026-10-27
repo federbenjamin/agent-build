@@ -11,7 +11,7 @@
 #      message holds the word), `gh pr create|ready|merge|edit|close|reopen|lock|unlock`,
 #      `gh repo create … --push`, a `gh api` with a method or field flag.
 #   2. Only when 1 misses and a segment runs a script runner (pnpm, npm, npx, yarn, bun, tsx, node):
-#      the repo's own ship steps, `push`, `pr_open` and `merge` from `<root>/runtime/steps.ts <cwd>
+#      the repo's own ship steps, `push`, `pr_open`, `merge` and `publish` from `<root>/runtime/steps.ts <cwd>
 #      --json`, each matched by its last token in a runner segment (`pnpm pr:merge`, `pnpm run
 #      pr:merge`). A step whose command is a plain git/gh form is already covered by 1. A non-zero
 #      exit from steps.ts (a public repo with no store dir) fails open.
@@ -304,7 +304,7 @@ step_tokens() {
   local IFS=$' \t\n'
   json=$(node "$ROOT/runtime/steps.ts" "$CWD" --json 2>/dev/null) || return 0
   printf '%s' "$json" \
-    | jq -r '.steps[] | select(.step == "push" or .step == "pr_open" or .step == "merge") | .command // empty' 2>/dev/null \
+    | jq -r '.steps[] | select(.step == "push" or .step == "pr_open" or .step == "merge" or .step == "publish") | .command // empty' 2>/dev/null \
     | while IFS= read -r cmd; do
         IFS=$' \t\n'
         set -f

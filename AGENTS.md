@@ -1,13 +1,19 @@
 # agent-build
 
-The `/build` system: the skill (`skills/build/`), its runtime scripts (`runtime/`), and its twelve agents (`agents/`, declared in `agents.json`). `docs/layout.md` has the layout.
+The `/build` system: the skill (`skills/build/`), its runtime scripts (`runtime/`), and its fourteen agents (`agents/`, declared in `agents.json`). `docs/layout.md` has the layout.
+
+## Source of truth
+
+- **Design record:** `docs/design.md` — why the skill and its agents work as they do. A section of it without a marker describes live behaviour; `**Not built.**` and `**Partial:** …` mark the rest. Where code and the record disagree, code wins and the record has a bug, fixed in the same PR.
 
 ## Conventions
 
 - **Name a script in docs by its installed path:** `~/.agent-build/runtime/<script>`, never a path into this checkout.
 - **`skills/build/SKILL.md` stays within 12,000 characters** (bytes, as `wc -c` counts them): a skills installer may refuse a larger one. Move steps into the stop files it points at. `runtime/__tests__/buildStopPins.test.ts` checks it.
 - **An agent is in `agents.json` and `agents/<name>.md` together, or in neither.** `tests/agents.test.mjs` checks it.
+- **A test file's first import is `runtime/__tests__/helpers/operatorEnv.ts`**, which cuts the process off the operator's env and gives it a `HOME` of its own; `runtime/__tests__/operatorEnv.test.ts` checks it.
 - Run `pnpm -s typecheck` and `pnpm -s test` before you hand work over; `.githooks/pre-push` runs both (`git config core.hooksPath .githooks` once per clone).
+- **`graph/` is its own package** with its own dependencies: work there runs `pnpm install`, `pnpm typecheck`, and `pnpm test` inside `graph/` (CI runs them; the root commands and the pre-push hook do not).
 
 ## Don'ts
 
@@ -19,10 +25,6 @@ The `/build` system: the skill (`skills/build/`), its runtime scripts (`runtime/
 
 - `main` changes only through a PR, squash-merged.
 <!-- <<< git-workflow -->
-
-## Source of truth
-
-`docs/design.md` is the design record. A section of it without a marker describes live behaviour; `**Not built.**` and `**Partial:** …` mark the rest. Where code and the record disagree, code wins and the record has a bug, fixed in the same PR.
 
 ## Project state
 

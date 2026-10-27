@@ -1,4 +1,6 @@
-/** cursorySplit: the per-folder counts and the cut for a split `review-cursory` wave read (fix4 item 5). */
+/** cursorySplit: the per-folder counts and the cut for a split `review` wave read (fix4 item 5). */
+import "./helpers/operatorEnv.ts";
+
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

@@ -8,26 +8,26 @@
  */
 
 import { BEHAVIOR_MD_RES } from "../reviewLensSelect.ts";
+import { disjointSet, setsOf } from "./disjointSet.ts";
 import {
   type Advice,
+  cleanPath,
   type DriftRound,
   driftGroupOf,
   driftRound,
   type FinalRound,
   type Finding,
-  type FixFile,
-  type FixLine,
   type FixRound,
   type GivenRow,
   type HandTestLine,
   isFixedAt,
+  isFixRound,
   type Kind,
   KIND_RANK,
   KINDS,
   type Leftover,
   type Locator,
   normaliseLocator,
-  parseFixFile,
   parseHandTestFile,
   parseReaderFile,
   parseSessionFile,
@@ -47,7 +47,9 @@ import {
   type StatusWord,
   splitFindingId,
   type TableJson,
+  URGENT_KINDS,
 } from "./runFiles.ts";
+import { type FixFile, type FixLine, parseFixFile } from "./fixFile.ts";
 
 // ── Errors ───────────────────────────────────────────────────────────────────────────────────
 
@@ -142,7 +144,11 @@ export function roundIntake(round: RoundId, table: TableJson): RoundIntake {
 
 /** Every stage folder a round reads: its carries' folders and its new-finding folders. */
 export function roundStages(round: RoundId, table: TableJson): StageKey[] {
-  const i = roundIntake(round, table);
+  return intakeStages(roundIntake(round, table));
+}
+
+/** Every stage folder an intake reads. */
+export function intakeStages(i: RoundIntake): StageKey[] {
   const out = new Map<string, StageKey>();
   for (const s of [...i.carry.map((c) => c.stage), ...i.newStages]) out.set(s.key, s);
   return [...out.values()];
@@ -167,31 +173,88 @@ export function stageCarry(stage: StageKey): Carry | null {
   }
 }
 
+/** The fix rounds `table.json` holds, in build order (a drift group's `drift-<n>` among them). */
+export function fixRoundsIn(table: TableJson): FixRound[] {
+  return (Object.keys(table.rounds) as RoundId[]).filter(isFixRound).sort(roundOrder) as FixRound[];
+}
+
+/** The round whose intake reads fix round `r`'s rows back (round 1 → 2, … escalate and drift-<n> → final). */
+function roundAfter(r: FixRound, table: TableJson): RoundId | null {
+  for (const id of ["2", "3", "escalate", "final"] as const) {
+    if (roundIntake(id, table).carry.some((c) => c.fix === r)) return id;
+  }
+  return null;
+}
+
+/**
+ * Every finding id (a row's id and its `also`) whose row the fixer `dropped` and the table then
+ * closed. The table closes a dropped row only on the stage's `agree` (`routeRow`; with no
+ * stage read the drop stands, and the gate refuses a run whose read was owed and missing), so this is
+ * "dropped with an agree". A disagreed drop comes back as a row and its findings survive.
+ */
+export function droppedAndAgreed(table: TableJson, fixes: ReadonlyMap<FixRound, FixFile>): Set<string> {
+  const out = new Set<string>();
+  for (const { row, line } of closedWithLine(table, fixes)) {
+    if (line.action === "dropped") for (const id of [row.id, ...row.also]) out.add(id);
+  }
+  return out;
+}
+
+/**
+ * Every finding id (a row's id and its `also`) whose row the fixer `fixed` with a `kind=` and the
+ * table then closed, with the higher of the row's kind and the fixer's: the kind `routeRow` would
+ * have carried the row on with had the read not resolved it. A row the read left open is carried on
+ * with that kind in the next round, so only a closed row needs this.
+ */
+export function fixedAsKinds(table: TableJson, fixes: ReadonlyMap<FixRound, FixFile>): Map<string, Kind> {
+  const out = new Map<string, Kind>();
+  for (const { row, line } of closedWithLine(table, fixes)) {
+    if (line.action !== "fixed" || !line.kind) continue;
+    for (const id of [row.id, ...row.also]) out.set(id, higher(row.kind, line.kind));
+  }
+  return out;
+}
+
+/** Each row of a fix round that the next round closed, with the fixer's line for it. */
+function closedWithLine(table: TableJson, fixes: ReadonlyMap<FixRound, FixFile>): { row: Row; line: FixLine }[] {
+  const out: { row: Row; line: FixLine }[] = [];
+  for (const r of fixRoundsIn(table)) {
+    const round = table.rounds[r];
+    const fix = fixes.get(r);
+    const next = roundAfter(r, table);
+    const closed = next === null ? undefined : table.rounds[next]?.closed;
+    if (!round || !fix || !closed) continue;
+    for (const row of round.rows) {
+      const line = fix.lines.find((l) => l.row === row.id);
+      if (line && closed.includes(row.id)) out.push({ row, line });
+    }
+  }
+  return out;
+}
+
 /** The kinds that become rows at a round; `null` for `final`, which has no fixer. */
 function fixedKinds(round: RoundId): readonly Kind[] | null {
   return round === "final" ? null : KINDS.filter((k) => isFixedAt(k, round));
 }
 
-const URGENT: readonly Kind[] = ["behavior", "security", "missing"];
-
 // ── Readers ──────────────────────────────────────────────────────────────────────────────────
 
 /** Merge order: these readers first, in this order; then repo readers by name; then `SESSION`. */
 const READER_ORDER = [
-  "review-cursory",
-  "review-cursory-codex",
-  "gate-silent-failure-hunter",
-  "security-review",
-  "build-verifier",
+  "review",
+  "review-codex",
+  "silent-failures",
+  "security",
+  "completeness",
   "simplifier",
 ];
 
-/** At a stage, `review-cursory.md` is the Sonnet read that stood in for a failed Codex run, so it is
+/** At a stage, `review.md` is the Sonnet read that stood in for a failed Codex run, so it is
  *  given Codex's rows. */
-const CODEX_ROLE = new Set(["review-cursory-codex", "review-cursory"]);
+const CODEX_ROLE = new Set(["review-codex", "review"]);
 
 /**
- * The rows one reader must answer at a stage (§1.13 `dispatch`): for `review-cursory-codex` or its
+ * The rows one reader must answer at a stage (§1.13 `dispatch`): for `review-codex` or its
  * Sonnet stand-in, every row the fixer marked `fixed`, `dropped`, or `relabel`; for another reader,
  * those of them holding one of its ids. A `decision` row is banked and never given; a `blocked` row
  * was not changed, so it is never given either and stays open.
@@ -212,7 +275,7 @@ export function givenRows(rows: readonly Row[], fix: FixFile, reader: string): G
 // ── Inputs ───────────────────────────────────────────────────────────────────────────────────
 
 export interface InputFile {
-  /** Relative to the run dir: `review-cursory.md`, `stage-confirm-1/review-cursory-codex.md`. */
+  /** Relative to the run dir: `review.md`, `stage-confirm-1/review-codex.md`. */
   file: string;
   text: string;
 }
@@ -254,6 +317,8 @@ export interface RoundInputs {
   /** Every `hand-test-<n>.txt` in the run dir; the round reads the ones no other round consumed. */
   handTests?: (InputFile & { n: number })[];
   merge: MergeLimits;
+  /** The round's intake when its caller sets its own (the build graph's); else `roundIntake`. */
+  intake?: RoundIntake;
 }
 
 export interface RoundResult {
@@ -283,7 +348,6 @@ export function applyKindRules(kind: Kind, locators: readonly Locator[], isTarge
 
 // ── Merge ────────────────────────────────────────────────────────────────────────────────────
 
-const cleanPath = (p: string): string => p.replace(/^\.\//, "");
 const isWholeFile = (l: Locator): boolean => l.start === 0 && l.end === 0;
 
 /** Two locators name one place: same path, and ranges that overlap or lie within `near` lines. A
@@ -347,25 +411,18 @@ function rowText(f: Finding): RowText {
  */
 function mergeFindings(candidates: readonly Candidate[], lim: MergeLimits, enteredAt: RoundId): Row[] {
   const sorted = [...candidates].sort(compareOrder);
-  const parent = sorted.map((_, i) => i);
-  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i]!)));
+  const sets = disjointSet(sorted.length);
   const mergeable = (c: Candidate) => c.kind !== "missing";
   for (let i = 0; i < sorted.length; i++) {
     if (!mergeable(sorted[i]!)) continue;
     for (let j = i + 1; j < sorted.length; j++) {
       if (!mergeable(sorted[j]!)) continue;
       const meet = sorted[i]!.finding.locators.some((a) => sorted[j]!.finding.locators.some((b) => locatorsMeet(a, b, lim)));
-      if (!meet) continue;
-      const [ri, rj] = [find(i), find(j)];
-      if (ri !== rj) parent[Math.max(ri, rj)] = Math.min(ri, rj);
+      if (meet) sets.union(i, j);
     }
   }
-  const groups = new Map<number, Candidate[]>();
-  sorted.forEach((c, i) => {
-    const root = find(i);
-    groups.set(root, [...(groups.get(root) ?? []), c]);
-  });
-  return [...groups.values()].map((group) => {
+  return setsOf(sets, sorted.length).map((members) => {
+    const group = members.map((i) => sorted[i]!);
     let kind = group[0]!.kind;
     for (const c of group) if (KIND_RANK[c.kind] > KIND_RANK[kind]) kind = c.kind;
     const locators: Locator[] = [];
@@ -531,7 +588,7 @@ function consumedElsewhere(table: TableJson, round: RoundId): Set<string> {
  */
 export function buildRound(inputs: RoundInputs): RoundResult {
   const { round: roundId, table, isTarget, merge } = inputs;
-  const intake = roundIntake(roundId, table);
+  const intake = inputs.intake ?? roundIntake(roundId, table);
   for (const need of intake.needs) {
     if (!table.rounds[need]) throw new TableInputError(`round ${roundId} needs round ${need} in table.json first`);
   }
@@ -594,7 +651,7 @@ export function buildRound(inputs: RoundInputs): RoundResult {
   // new findings.
   const answers = new Map<string, Answer[]>();
   const ran = new Map<string, boolean>();
-  for (const stage of roundStages(roundId, table)) {
+  for (const stage of intakeStages(intake)) {
     const input = inputs.stages?.find((s) => s.stage.key === stage.key);
     ran.set(stage.key, input?.ran ?? false);
     if (!input?.ran) continue;
@@ -666,7 +723,7 @@ export function buildRound(inputs: RoundInputs): RoundResult {
   const open: { id: string; kind: Kind }[] = [];
   const place = (row: Row, reason: string) => {
     if (kinds === null) {
-      if (URGENT.includes(row.kind)) open.push({ id: row.id, kind: row.kind });
+      if (URGENT_KINDS.includes(row.kind)) open.push({ id: row.id, kind: row.kind });
       else leftovers.push({ row, reason });
     } else if (kinds.includes(row.kind)) rows.push(row);
     else leftovers.push({ row, reason });

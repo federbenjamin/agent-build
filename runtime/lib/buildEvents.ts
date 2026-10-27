@@ -7,21 +7,43 @@
 
 import { Shape, type ShapeIssue } from "./shape.ts";
 
-export const BUILD_EVENT_SCHEMA = 1;
-export const BUILD_EVENT_NAMES = ["plan", "unit-merged", "blocked", "finished"] as const;
+export const BUILD_EVENT_SCHEMA = 4;
+
+/** The environment variable a launcher sets: the consumer command line. */
+export const BUILD_EVENT_CMD = "BUILD_EVENT_CMD";
+
+/** The consumer command line, trimmed; `""` when nobody is listening. */
+export function consumerLine(env: Record<string, string | undefined>): string {
+  return (env[BUILD_EVENT_CMD] ?? "").trim();
+}
+export const BUILD_EVENT_NAMES = ["plan", "unit-started", "unit-merged", "blocked", "finished"] as const;
 export type BuildEventName = (typeof BUILD_EVENT_NAMES)[number];
-export const FINISHED_OUTCOMES = ["merged", "unmerged"] as const;
+export const FINISHED_OUTCOMES = ["merged", "unmerged", "failed", "cancelled", "abandoned"] as const;
 export type FinishedOutcome = (typeof FINISHED_OUTCOMES)[number];
 
 export interface BuildEventBase {
-  schema: 1;
+  schema: typeof BUILD_EVENT_SCHEMA;
   runid: string;
   at: string;
   event: BuildEventName;
 }
 export interface PlanEvent extends BuildEventBase {
   event: "plan";
+  /** The plan's title, for a unit of a plan. */
+  plan?: string;
+  /** The plan file's path, when the work names one. */
+  plan_path?: string;
+  /** The repo as `owner/name`. */
+  repo: string;
   units: { id: string; title: string }[];
+}
+export interface UnitStartedEvent extends BuildEventBase {
+  event: "unit-started";
+  id: string;
+  /** The plan file's path, as the session's `plan` event named it. */
+  plan_path?: string;
+  /** The repo as `owner/name`. */
+  repo: string;
 }
 export interface UnitMergedEvent extends BuildEventBase {
   event: "unit-merged";
@@ -37,18 +59,28 @@ export interface FinishedEvent extends BuildEventBase {
   event: "finished";
   outcome: FinishedOutcome;
   pr?: number;
+  /** The run's branch, and the worktrees it left on disk, for a run that ended before its cleanup. */
+  branch?: string;
+  worktrees?: string[];
 }
-export type BuildEvent = PlanEvent | UnitMergedEvent | BlockedEvent | FinishedEvent;
+export type BuildEvent = PlanEvent | UnitStartedEvent | UnitMergedEvent | BlockedEvent | FinishedEvent;
 
 const BASE_KEYS = ["schema", "runid", "at", "event"] as const;
 /** Each event's own fields, in wire order: the keys the parser knows beyond the base four, and the
- *  emitter's flags (`--<field>`; `units` is the repeatable `--unit`). */
+ *  emitter's flags (`eventFlag`). */
 export const BUILD_EVENT_FIELDS = {
-  plan: ["units"],
+  plan: ["plan", "plan_path", "repo", "units"],
+  "unit-started": ["id", "plan_path", "repo"],
   "unit-merged": ["id", "pr"],
   blocked: ["id", "needs"],
-  finished: ["outcome", "pr"],
+  finished: ["outcome", "pr", "branch", "worktrees"],
 } as const satisfies Record<BuildEventName, readonly string[]>;
+
+/** The list fields, each taken by a repeatable flag named for one item. */
+export const BUILD_EVENT_LIST_FLAGS: Readonly<Record<string, string>> = { units: "--unit", worktrees: "--worktree" };
+
+/** The emitter's flag for a field: `--<field>` with `_` typed `-`, or a list field's repeatable flag. */
+export const eventFlag = (field: string): string => BUILD_EVENT_LIST_FLAGS[field] ?? `--${field.replaceAll("_", "-")}`;
 
 export function isBuildEventName(v: unknown): v is BuildEventName {
   return (BUILD_EVENT_NAMES as readonly unknown[]).includes(v);
@@ -73,6 +105,13 @@ function nonEmpty(s: Shape, v: unknown, path: string): string {
 function unitId(s: Shape, v: unknown, path: string): string {
   if (typeof v === "string" && v !== "" && !/[\s=]/.test(v)) return v;
   s.bad(path, "a unit id (a non-empty string with no whitespace and no `=`)");
+  return "";
+}
+
+function repoName(s: Shape, v: unknown): string {
+  const parts = typeof v === "string" && /^[\w.-]+\/[\w.-]+$/.test(v) ? v.split("/") : [];
+  if (parts.length === 2 && parts.every((p) => p !== "." && p !== "..")) return v as string;
+  s.bad("repo", "a repo as <owner>/<name>");
   return "";
 }
 
@@ -113,9 +152,25 @@ export function parseBuildEvent(raw: unknown): BuildEvent {
   let out: BuildEvent | undefined;
   if (event !== undefined) {
     switch (event) {
-      case "plan":
-        out = { ...base, event, units: readUnits(s, o.units) };
+      case "plan": {
+        const plan = o.plan === undefined ? undefined : nonEmpty(s, o.plan, "plan");
+        const plan_path = o.plan_path === undefined ? undefined : nonEmpty(s, o.plan_path, "plan_path");
+        out = {
+          ...base,
+          event,
+          ...(plan === undefined ? {} : { plan }),
+          ...(plan_path === undefined ? {} : { plan_path }),
+          repo: repoName(s, o.repo),
+          units: readUnits(s, o.units),
+        };
         break;
+      }
+      case "unit-started": {
+        const id = unitId(s, o.id, "id");
+        const plan_path = o.plan_path === undefined ? undefined : nonEmpty(s, o.plan_path, "plan_path");
+        out = { ...base, event, id, ...(plan_path === undefined ? {} : { plan_path }), repo: repoName(s, o.repo) };
+        break;
+      }
       case "unit-merged":
         out = { ...base, event, id: unitId(s, o.id, "id"), pr: prNumber(s, o.pr, "pr") };
         break;
@@ -127,7 +182,16 @@ export function parseBuildEvent(raw: unknown): BuildEvent {
       case "finished": {
         const outcome = s.oneOf(o.outcome, FINISHED_OUTCOMES, "outcome");
         const pr = o.pr === undefined ? undefined : prNumber(s, o.pr, "pr");
-        out = { ...base, event, outcome, ...(pr === undefined ? {} : { pr }) };
+        const branch = o.branch === undefined ? undefined : nonEmpty(s, o.branch, "branch");
+        const worktrees = o.worktrees === undefined ? undefined : s.arr(o.worktrees, "worktrees").map((w, i) => nonEmpty(s, w, `worktrees[${i}]`));
+        out = {
+          ...base,
+          event,
+          outcome,
+          ...(pr === undefined ? {} : { pr }),
+          ...(branch === undefined ? {} : { branch }),
+          ...(worktrees === undefined ? {} : { worktrees }),
+        };
         break;
       }
     }
@@ -154,7 +218,16 @@ export function formatBuildEvent(event: BuildEvent): string {
   let wire: Record<string, unknown>;
   switch (event.event) {
     case "plan":
-      wire = { ...base, units: event.units.map((u) => ({ id: u.id, title: u.title })) };
+      wire = {
+        ...base,
+        ...(event.plan === undefined ? {} : { plan: event.plan }),
+        ...(event.plan_path === undefined ? {} : { plan_path: event.plan_path }),
+        repo: event.repo,
+        units: event.units.map((u) => ({ id: u.id, title: u.title })),
+      };
+      break;
+    case "unit-started":
+      wire = { ...base, id: event.id, ...(event.plan_path === undefined ? {} : { plan_path: event.plan_path }), repo: event.repo };
       break;
     case "unit-merged":
       wire = { ...base, id: event.id, pr: event.pr };
@@ -163,7 +236,13 @@ export function formatBuildEvent(event: BuildEvent): string {
       wire = { ...base, ...(event.id === undefined ? {} : { id: event.id }), needs: event.needs };
       break;
     case "finished":
-      wire = { ...base, outcome: event.outcome, ...(event.pr === undefined ? {} : { pr: event.pr }) };
+      wire = {
+        ...base,
+        outcome: event.outcome,
+        ...(event.pr === undefined ? {} : { pr: event.pr }),
+        ...(event.branch === undefined ? {} : { branch: event.branch }),
+        ...(event.worktrees === undefined ? {} : { worktrees: [...event.worktrees] }),
+      };
       break;
   }
   return `${JSON.stringify(wire)}\n`;

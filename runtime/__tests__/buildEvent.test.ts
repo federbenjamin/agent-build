@@ -1,3 +1,5 @@
+import "./helpers/operatorEnv.ts";
+
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -5,8 +7,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
-import { BUILD_EVENT_CMD, runBuildEvent } from "../buildEvent.ts";
-import { BUILD_EVENT_FIELDS, BUILD_EVENT_NAMES, readBuildEvent } from "../lib/buildEvents.ts";
+import { runBuildEvent } from "../buildEvent.ts";
+import { BUILD_EVENT_CMD, BUILD_EVENT_FIELDS, BUILD_EVENT_NAMES, readBuildEvent } from "../lib/buildEvents.ts";
 import type { ExecFn, RunOpts } from "../lib/gitOps.ts";
 import { spawnSmoke } from "./helpers/spawnSmoke.ts";
 import { TSX_BIN } from "./helpers/tsxBin.ts";
@@ -15,9 +17,21 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..");
 const SCRIPT = join(ROOT, "buildEvent.ts");
 const NOW = new Date("2026-10-06T12:00:00.000Z");
-const PLAN_ARGV = ["plan", "--runid", "build-7", "--unit", "unit-1=Install"];
+const PLAN_ARGV = [
+  "plan",
+  "--runid",
+  "build-7",
+  "--unit",
+  "unit-1=Install",
+  "--repo",
+  "octo/app",
+  "--plan-path",
+  "/plans/setup.md",
+  "--plan",
+  "Setup",
+];
 const PLAN_WIRE =
-  '{"schema":1,"runid":"build-7","at":"2026-10-06T12:00:00.000Z","event":"plan","units":[{"id":"unit-1","title":"Install"}]}\n';
+  '{"schema":4,"runid":"build-7","at":"2026-10-06T12:00:00.000Z","event":"plan","plan":"Setup","plan_path":"/plans/setup.md","repo":"octo/app","units":[{"id":"unit-1","title":"Install"}]}\n';
 
 function deps(overrides: Partial<Parameters<typeof runBuildEvent>[1]> = {}) {
   return { env: {}, now: () => NOW, timeoutMs: 4321, ...overrides };
@@ -75,7 +89,7 @@ test("runBuildEvent: usage and event-validation errors exit 2 before invoking a 
   const exec: ExecFn = () => (calls++, "");
 
   const usage = runBuildEvent(["unknown", "--runid", "build-7"], deps({ env: { [BUILD_EVENT_CMD]: "consumer" }, exec }));
-  const invalid = runBuildEvent(["plan", "--runid", "build-7"], deps({ env: { [BUILD_EVENT_CMD]: "consumer" }, exec }));
+  const invalid = runBuildEvent(["plan", "--runid", "build-7", "--repo", "octo/app"], deps({ env: { [BUILD_EVENT_CMD]: "consumer" }, exec }));
 
   assert.equal(usage.exit, 2);
   assert.ok(usage.stderr.length > 0);
@@ -95,13 +109,18 @@ test("buildEvent entry point: no consumer command exits 0 without output", () =>
 });
 
 const SAMPLE_FLAGS: Record<string, string[]> = {
+  plan: ["--plan", "Setup"],
+  plan_path: ["--plan-path", "/plans/setup.md"],
+  repo: ["--repo", "octo/app"],
   units: ["--unit", "u1=Install"],
   id: ["--id", "u1"],
   pr: ["--pr", "12"],
   needs: ["--needs", "answer Q1"],
   outcome: ["--outcome", "merged"],
+  branch: ["--branch", "graph/g-1"],
+  worktrees: ["--worktree", "/runs/g-1/worktree"],
 };
-const flagOf = (field: string) => (field === "units" ? "--unit" : `--${field}`);
+const flagOf = (field: string) => SAMPLE_FLAGS[field]![0]!;
 
 test("runBuildEvent: every event takes exactly --runid and its own fields as flags, and sends each field", () => {
   const allFields = new Set<string>(Object.values(BUILD_EVENT_FIELDS).flat());

@@ -13,6 +13,8 @@
  * The pure runner `runGateClean` covers everything else in-process.
  */
 
+import "./helpers/operatorEnv.ts";
+
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -135,7 +137,7 @@ test("gate-clean: round-trips through mergeEligibility (eligible, matching head 
     "--class",
     CLASS,
     "--security",
-    "security-review: no match — no auth/migration/RLS/O1/Storage touch",
+    "security: no match — no auth/migration/RLS/O1/Storage touch",
   ]);
   assert.ok(body.startsWith(GATE_CLEAN_MARKER));
   assert.ok(body.includes(`class: ${CLASS}`));
@@ -315,7 +317,7 @@ test("gate-clean refusal: a --check naming an unknown check", () => {
   );
 });
 
-// ── gate-clean: the security disposition is DERIVED from the security-review lens's findings
+// ── gate-clean: the security disposition is DERIVED from the security lens's findings
 // file, not typed ─────────────────────────────────────────────────────────────────────────────
 
 /** A `### SEC.<n> — title` block in the shape parseFindingBlock (`lib/runFiles.ts`) requires; the
@@ -339,17 +341,17 @@ const LENS_RETURN = (n: number) =>
   n === 0 ? "NO FINDINGS\n" : Array.from({ length: n }, (_, i) => secBlock(i + 1)).join("\n\n");
 
 test("deriveSecurityVerdict: a NO FINDINGS return → 0 findings verdict", () => {
-  assert.equal(deriveSecurityVerdict(LENS_RETURN(0)), "security-review: 0 findings");
+  assert.equal(deriveSecurityVerdict(LENS_RETURN(0)), "security: 0 findings");
 });
 
 test("deriveSecurityVerdict: SEC.<n> blocks are counted", () => {
-  assert.equal(deriveSecurityVerdict(LENS_RETURN(2)), "security-review: 2 finding(s)");
+  assert.equal(deriveSecurityVerdict(LENS_RETURN(2)), "security: 2 finding(s)");
 });
 
 test("deriveSecurityVerdict: zero blocks with no NO FINDINGS line REFUSES rather than reading as clean", () => {
   assert.throws(
     () => deriveSecurityVerdict("the reader rambled and never declared a verdict"),
-    /no `### SEC\.<n>` blocks and no NO FINDINGS line — the security-review return drifted from the block format/
+    /no `### SEC\.<n>` blocks and no NO FINDINGS line — the security return drifted from the block format/
   );
 });
 
@@ -364,7 +366,7 @@ test("deriveSecurityVerdict: a block missing a required field REFUSES, naming th
 test("runGateClean: --security-return derives the verdict and outranks a typed claim", () => {
   const dir = mkdtempSync(join(tmpdir(), "emit-marker-"));
   try {
-    const ret = join(dir, "agent-1-security-review.md");
+    const ret = join(dir, "agent-1-security.md");
     writeFileSync(ret, LENS_RETURN(1));
     const body = runGateClean([
       "--sha",
@@ -379,7 +381,7 @@ test("runGateClean: --security-return derives the verdict and outranks a typed c
       "--security-return",
       ret,
     ]);
-    assert.match(body, /security-review: 1 finding\(s\) — all clear/);
+    assert.match(body, /security: 1 finding\(s\) — all clear/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -388,7 +390,7 @@ test("runGateClean: --security-return derives the verdict and outranks a typed c
 test("runGateClean: --security-return alone satisfies the security requirement", () => {
   const dir = mkdtempSync(join(tmpdir(), "emit-marker-"));
   try {
-    const ret = join(dir, "agent-1-security-review.md");
+    const ret = join(dir, "agent-1-security.md");
     writeFileSync(ret, LENS_RETURN(0));
     const body = runGateClean([
       "--sha",
@@ -400,7 +402,7 @@ test("runGateClean: --security-return alone satisfies the security requirement",
       "--security-return",
       ret,
     ]);
-    assert.match(body, /security-review: 0 findings/);
+    assert.match(body, /security: 0 findings/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

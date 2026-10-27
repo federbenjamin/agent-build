@@ -35,9 +35,9 @@ export interface RepoId {
   name: string;
 }
 
-type Opts = { exec?: ExecFn };
+type Opts = { exec?: ExecFn; env?: NodeJS.ProcessEnv };
 
-const run = (repo: string, opts: Opts) => ({ cwd: repo, ...(opts.exec ? { exec: opts.exec } : {}) });
+const run = (repo: string, opts: Opts) => ({ cwd: repo, ...(opts.exec ? { exec: opts.exec } : {}), ...(opts.env ? { env: opts.env } : {}) });
 
 /** `owner/name` from an origin URL: `git@host:o/r.git`, `https://host/o/r[.git]`, `ssh://git@host[:port]/o/r.git`.
  *  Null for a local path, a `file://` URL, or a path of other than two parts. */

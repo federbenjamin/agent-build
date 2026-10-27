@@ -1,0 +1,44 @@
+{
+  "status": "tuned",
+  "report": "rereview tuning report (2026-10-21): held-out AUC 0.778 on 57 rounds, accuracy 0.79 against 0.74 for never re-reading",
+  "model": "jev-1.14.0",
+  "cutoff": 0.974,
+  "combine": "mean",
+  "fields": {
+    "fix_diff": {
+      "input": "fix-diff",
+      "shape": "production-code",
+      "maxChars": 60000,
+      "note": {
+        "field": "fix_diff_note",
+        "text": "the fix round's diff, production code only: tests, docs, config and data files, lockfiles and generated copies left out"
+      },
+      "sample": "head"
+    }
+  },
+  "questions": {
+    "new_edge_cases": {
+      "type": "noul",
+      "instructions": "Does the code this fix adds bring new cases of its own to get right, such as new inputs, new states, new failure modes, or new interactions with other parts of the program?",
+      "criteria": {
+        "true": "The added code has new cases, inputs, states, or failure modes of its own that it must handle.",
+        "false": "The added code is so small or plain that it brings no new case of its own."
+      }
+    },
+    "adds_branch": {
+      "type": "noul",
+      "instructions": "Look only at the production code this fix adds or edits. Does it add a new branch, condition, early return, fallback, or error path?",
+      "criteria": {
+        "true": "The fix adds at least one new condition, branch, early return, fallback, or error path in production code.",
+        "false": "The fix adds no new branch: it changes text, values, names, tests, or straight-line code only."
+      }
+    }
+  },
+  "features": [
+    {
+      "input": "fix-file",
+      "pattern": "^\\S+ · decision\\b(?: · [0-9a-f]{7,40})?(?: — .*)?$",
+      "weight": 0.4
+    }
+  ]
+}

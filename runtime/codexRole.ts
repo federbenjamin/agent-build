@@ -109,7 +109,7 @@ export function roleFromRepo(role: string, repoRoot: string): RolePins | null {
 /** The sandbox of a role that names none: roles that author and prove tests edit their disposable
  *  tree; every reader role reads. */
 export function defaultSandbox(role: string): Sandbox {
-  return role === "test-author" ? "workspace-write" : "read-only";
+  return role === "write-tests" ? "workspace-write" : "read-only";
 }
 
 export interface CodexArgsOpts {
@@ -120,6 +120,10 @@ export interface CodexArgsOpts {
   out: string;
   /** False drops the project AGENTS.md from the Codex context; `~/.codex/AGENTS.md` still loads. */
   projectDocs: boolean;
+  /** Folders outside the tree the run may also write; only a writing sandbox honours them. */
+  addDirs?: string[];
+  /** Print the run's events to stdout as JSONL (`--json`), for a caller that keeps its token counts. */
+  json?: boolean;
 }
 
 export function codexArgs(opts: CodexArgsOpts): string[] {
@@ -129,6 +133,7 @@ export function codexArgs(opts: CodexArgsOpts): string[] {
     opts.tree,
     "-s",
     opts.sandbox,
+    ...(opts.sandbox === "workspace-write" ? (opts.addDirs ?? []).flatMap((d) => ["--add-dir", d]) : []),
     // tsx binds an AF_UNIX IPC socket under $TMPDIR; Seatbelt denies the bind while the network is
     // restricted, and `codex exec` has no per-path socket allowance — so a writing role gets the network.
     ...(opts.sandbox === "workspace-write"
@@ -142,6 +147,7 @@ export function codexArgs(opts: CodexArgsOpts): string[] {
     "-c",
     `model_reasoning_effort=${opts.effort}`,
     "--skip-git-repo-check",
+    ...(opts.json === true ? ["--json"] : []),
     "-o",
     opts.out,
     "-",
@@ -177,7 +183,7 @@ function defaultSpawn(
   }
 }
 
-function roleTomlPath(role: string, tree: string): string | null {
+export function roleTomlPath(role: string, tree: string): string | null {
   for (const dir of [join(tree, ".codex", "agents"), join(homedir(), ".codex", "agents")]) {
     const path = join(dir, `${role}.toml`);
     if (existsSync(path)) return path;
@@ -185,10 +191,54 @@ function roleTomlPath(role: string, tree: string): string | null {
   return null;
 }
 
-function defaultReadRole(role: string, tree: string): string | null {
+export function defaultReadRole(role: string, tree: string): string | null {
   const path = roleTomlPath(role, tree);
   return path === null ? null : readFileSync(path, "utf8");
 }
+
+export interface CodexPlan {
+  pins: RolePins;
+  sandbox: Sandbox;
+  /** The argv after `codex`. */
+  args: string[];
+  /** Where the role came from, for the dry run's first line. */
+  from: string;
+}
+
+/** The role `role` resolves to for `tree` (a repo toml, a user toml, then this repo's `agents.json`)
+ *  and the `codex` argv that runs it; null when no such role exists. */
+export function planCodexRole(
+  role: string,
+  where: { tree: string; out: string; addDirs?: string[]; json?: boolean },
+  deps: Pick<CodexRoleDeps, "readRole" | "repoRole"> = {}
+): CodexPlan | null {
+  const readRole = deps.readRole ?? defaultReadRole;
+  const repoRole = deps.repoRole ?? ((r: string) => roleFromRepo(r, REPO_ROOT));
+  const toml = readRole(role, where.tree);
+  const pins = toml !== null ? parseRoleToml(toml) : repoRole(role);
+  if (pins === null) return null;
+  const sandbox = pins.sandbox ?? defaultSandbox(role);
+  const args = codexArgs({
+    tree: where.tree,
+    sandbox,
+    model: pins.model,
+    effort: pins.effort,
+    out: where.out,
+    projectDocs: pins.projectDocs,
+    ...(where.addDirs === undefined ? {} : { addDirs: where.addDirs }),
+    ...(where.json === undefined ? {} : { json: where.json }),
+  });
+  const from =
+    toml === null
+      ? `agents.json + agents/${role}.md`
+      : deps.readRole === undefined
+        ? roleTomlPath(role, where.tree)!
+        : "the readRole seam";
+  return { pins, sandbox, args, from };
+}
+
+/** The prompt `codex exec` reads on stdin: the role's instructions, then the run's dispatch. */
+export const codexPrompt = (instructions: string, dispatch: string): string => instructions + PROMPT_SEPARATOR + dispatch;
 
 const USAGE =
   "usage: codexRole.ts <role> --tree <abs-dir> --dispatch <file> --out <file> [--log <file>] [--dry-run]";
@@ -200,8 +250,6 @@ function usage(message: string): number {
 
 export function main(argv: string[], deps: CodexRoleDeps = {}): number {
   const spawn = deps.spawn ?? defaultSpawn;
-  const readRole = deps.readRole ?? defaultReadRole;
-  const repoRole = deps.repoRole ?? ((role: string) => roleFromRepo(role, REPO_ROOT));
 
   let tree: string | undefined;
   let dispatch: string | undefined;
@@ -234,20 +282,11 @@ export function main(argv: string[], deps: CodexRoleDeps = {}): number {
   if (log !== undefined && !existsSync(dirname(log)))
     return usage(`--log directory does not exist: ${dirname(log)}`);
 
-  const toml = readRole(role, tree);
-  const pins = toml !== null ? parseRoleToml(toml) : repoRole(role);
-  if (pins === null) return usage(`unknown role: ${role}`);
-
-  const sandbox = pins.sandbox ?? defaultSandbox(role);
-  const args = codexArgs({ tree, sandbox, model: pins.model, effort: pins.effort, out, projectDocs: pins.projectDocs });
+  const plan = planCodexRole(role, { tree, out }, deps);
+  if (plan === null) return usage(`unknown role: ${role}`);
+  const { pins, sandbox, args } = plan;
   if (dryRun) {
-    const from =
-      toml === null
-        ? `agents.json + agents/${role}.md`
-        : deps.readRole === undefined
-          ? roleTomlPath(role, tree)
-          : "the readRole seam";
-    console.log(`role: ${from}`);
+    console.log(`role: ${plan.from}`);
     console.log(`model: ${pins.model}`);
     console.log(`effort: ${pins.effort}`);
     console.log(`sandbox: ${sandbox}`);
@@ -255,7 +294,7 @@ export function main(argv: string[], deps: CodexRoleDeps = {}): number {
     console.log(`codex: ${args.join(" ")}`);
     return 0;
   }
-  const prompt = pins.instructions + PROMPT_SEPARATOR + readFileSync(dispatch, "utf8");
+  const prompt = codexPrompt(pins.instructions, readFileSync(dispatch, "utf8"));
   try {
     return spawn("codex", args, prompt, log ?? null) ?? 1;
   } catch (e) {

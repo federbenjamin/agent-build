@@ -1,8 +1,10 @@
 /**
  * Doc pins for the build flow's own prompts. They assert prompt CONTENT stayed consistent with the
- * design: a worker that can re-acquire fan-out, or a surface that loses the one/two-local, three-plus-to-test-author
+ * design: a worker that can re-acquire fan-out, or a surface that loses the one/two-local, three-plus-to-write-tests
  * rule, regresses silently otherwise.
  */
+import "./helpers/operatorEnv.ts";
+
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -25,17 +27,8 @@ import { composeLine, parseArgs as parseLineArgs } from "../ledgerLine.ts";
 import { parseLedger } from "../lib/ledger.ts";
 import { DEFAULTS } from "../thresholds.ts";
 import { FLOW_AGENTS, STAGE_READER_NAMES } from "../lib/riskClass.ts";
-import {
-  DECISION_WHICH,
-  FIX_ROUNDS,
-  isFixRound,
-  isRoundId,
-  KINDS,
-  parseFixFile,
-  parseHandTestFile,
-  parseStageKey,
-  STAGES_FIXING,
-} from "../lib/runFiles.ts";
+import { FIX_ROUNDS, isFixRound, isRoundId, KINDS, parseHandTestFile, parseStageKey, STAGES_FIXING } from "../lib/runFiles.ts";
+import { DECISION_WHICH, parseFixFile } from "../lib/fixFile.ts";
 
 const EXIT_LINES = [
   "exit checks:",
@@ -70,16 +63,16 @@ const MANIFEST = JSON.parse(readFileSync(join(ROOT, "agents.json"), "utf8")) as 
 
 test("a builder's spawned worker can never itself spawn agents — no Agent in its tools line", () => {
   // The orchestrating /build session starts every agent; builder, fixer, hand tester, and the
-  // test-author writers spawn nothing.
-  for (const agent of ["builder", "fixer", "hand-tester", "test-author"]) {
+  // write-tests writers spawn nothing.
+  for (const agent of ["builder", "fixer", "hand-test", "write-tests"]) {
     const toolsLine = fmLine(frontmatter(agent), "tools");
     assert.ok(toolsLine.length > 0, `${agent} must declare a tools: line`);
     assert.ok(!/\bAgent\b/.test(toolsLine), `${agent} tools: must not include Agent`);
   }
 });
 
-test("the small-batch rule: one/two tests stay local, three or more go to test-author", () => {
-  for (const rel of ["skills/build", "agents/builder.md", "agents/test-author.md"]) {
+test("the small-batch rule: one/two tests stay local, three or more go to write-tests", () => {
+  for (const rel of ["skills/build", "agents/builder.md", "agents/write-tests.md"]) {
     const text = read(rel);
     assert.match(
       text,
@@ -88,8 +81,8 @@ test("the small-batch rule: one/two tests stay local, three or more go to test-a
     );
     assert.match(
       text,
-      /(?:\b(?:three|3)\s*(?:or more|\+)\b[\s\S]{0,180}\btest-author\b|\btest-author\b[\s\S]{0,180}\b(?:three|3)\s*(?:or more|\+)\b)/i,
-      `${rel} must send three+ tests to test-author`
+      /(?:\b(?:three|3)\s*(?:or more|\+)\b[\s\S]{0,180}\bwrite-tests\b|\bwrite-tests\b[\s\S]{0,180}\b(?:three|3)\s*(?:or more|\+)\b)/i,
+      `${rel} must send three+ tests to write-tests`
     );
   }
 });
@@ -100,17 +93,17 @@ test("no build prompt names a repo command: every command is a step or a global 
   const files = [
     "skills/build",
     ...[
-      "build-verifier",
+      "completeness",
       "builder",
       "fixer",
-      "gate-silent-failure-hunter",
+      "silent-failures",
       "gate-warden",
-      "hand-tester",
+      "hand-test",
       "prior-art",
-      "review-cursory",
-      "security-review",
+      "review",
+      "security",
       "simplifier",
-      "test-author",
+      "write-tests",
     ].map((a) => `agents/${a}.md`),
   ];
   for (const rel of files) {
@@ -164,7 +157,7 @@ test("every run-file and brief-block example in the fixer, the hand tester, and 
   const counts: Record<string, Record<BlockTag, number>> = {};
   const parts: string[] = [];
   const slices: string[] = [];
-  for (const rel of ["agents/fixer.md", "agents/hand-tester.md", "skills/build"]) {
+  for (const rel of ["agents/fixer.md", "agents/hand-test.md", "skills/build"]) {
     counts[rel] = { "fix-file": 0, "hand-test-file": 0, "hand-test-block": 0, "parts-block": 0, "test-slices-block": 0 };
     for (const { tag, body: block } of taggedBlocks(read(rel))) {
       counts[rel]![tag]++;
@@ -184,7 +177,7 @@ test("every run-file and brief-block example in the fixer, the hand tester, and 
   }
   // A pin that parses nothing passes on nothing: each agent must hold the example it writes.
   assert.ok(counts["agents/fixer.md"]!["fix-file"] >= 1, "fixer.md needs a ```fix-file example");
-  assert.ok(counts["agents/hand-tester.md"]!["hand-test-file"] >= 1, "hand-tester.md needs a ```hand-test-file example");
+  assert.ok(counts["agents/hand-test.md"]!["hand-test-file"] >= 1, "hand-test.md needs a ```hand-test-file example");
   assert.ok(counts["skills/build"]!["hand-test-block"] >= 1, "skills/build needs a ```hand-test-block example");
   assert.equal(counts["skills/build"]!["parts-block"], 1, "skills/build holds one ```parts-block example (BRIEF)");
   assert.equal(counts["skills/build"]!["test-slices-block"], 1, "skills/build holds one ```test-slices-block example (BRIEF)");
@@ -225,7 +218,7 @@ test("the builder and the fixer carry no model pin, no Skill, no Agent; the prin
       .map((l) => l.replace(/^ {2}- /, "").trim())
       .filter(Boolean);
   assert.deepEqual(skillsOf("fixer"), [], "fixer preloads no skill");
-  for (const agent of ["builder", "fixer", "brief-writer"]) {
+  for (const agent of ["builder", "fixer", "write-brief"]) {
     assert.ok(!skillsOf(agent).includes("make-decision"), `${agent} must not preload make-decision`);
     const row = MANIFEST.agents.find((a) => a.name === agent)?.context;
     assert.equal(row?.principles, true, `${agent}'s context row must inject the principles`);
@@ -246,13 +239,13 @@ test("an agent whose context row has claudeMd: false carries omitClaudeMd: true 
 });
 
 test("the hand tester is Opus, edits nothing, and keeps no memory", () => {
-  const fm = frontmatter("hand-tester");
+  const fm = frontmatter("hand-test");
   assert.equal(fmLine(fm, "model"), "model: opus");
   const tools = fmLine(fm, "tools");
   for (const tool of ["Edit", "Skill", "Agent"]) {
-    assert.ok(!new RegExp(`\\b${tool}\\b`).test(tools), `hand-tester tools: must not include ${tool}`);
+    assert.ok(!new RegExp(`\\b${tool}\\b`).test(tools), `hand-test tools: must not include ${tool}`);
   }
-  assert.equal(fmLine(fm, "memory"), "", "hand-tester keeps no memory (memory would re-enable Edit)");
+  assert.equal(fmLine(fm, "memory"), "", "hand-test keeps no memory (memory would re-enable Edit)");
 });
 
 test("no agent keeps memory, and an agent that writes a file lists Write itself", () => {
@@ -263,7 +256,7 @@ test("no agent keeps memory, and an agent that writes a file lists Write itself"
     assert.equal(fmLine(frontmatter(file.slice(0, -3)), "hooks"), "", `${file} carries no hooks: block`);
     assert.equal(fmLine(frontmatter(file.slice(0, -3)), "permissionMode"), "", `${file} carries no permissionMode:`);
   }
-  for (const agent of ["builder", "fixer", "review-cursory", "gate-silent-failure-hunter", "security-review", "simplifier", "gate-warden", "build-verifier", "test-author"]) {
+  for (const agent of ["builder", "fixer", "review", "silent-failures", "security", "simplifier", "gate-warden", "completeness", "write-tests"]) {
     assert.match(fmLine(frontmatter(agent), "tools"), /\bWrite\b/, `${agent} must list Write in tools`);
   }
 });
@@ -326,10 +319,10 @@ function step(text: string, n: number): string {
 }
 
 test("a failed Codex stage read's stand-in gets its own rows file, never the Codex dispatch", () => {
-  assert.ok(STAGE_READER_NAMES.includes("review-cursory"), "reviewTable.ts dispatch must take --reader review-cursory");
+  assert.ok(STAGE_READER_NAMES.includes("review"), "reviewTable.ts dispatch must take --reader review");
   const fails = section(stop("CLOSE.md"), "Codex fails at a read");
-  assert.match(fails, /reviewTable\.ts dispatch --run-dir <run-dir> --stage <stage> --reader review-cursory --out /);
-  assert.match(fails, /stage-<stage>\/review-cursory\.md/);
+  assert.match(fails, /reviewTable\.ts dispatch --run-dir <run-dir> --stage <stage> --reader review --out /);
+  assert.match(fails, /stage-<stage>\/review\.md/);
   assert.doesNotMatch(fails, /same dispatch/, "the Codex dispatch tells its reader to write no file");
 });
 
@@ -339,14 +332,14 @@ test("every stage read after a fix runs step 5's dispatch first", () => {
   for (const n of [8, 10, 11]) assert.match(step(close, n), /owed readers as step 5/i, `CLOSE step ${n}`);
   const driftConfirm = step(stop("DRIFT.md"), 5);
   assert.match(driftConfirm, /owed readers as CLOSE step 5/);
-  assert.match(driftConfirm, /reviewTable\.ts dispatch --run-dir <run-dir> --stage drift-confirm-<g> --reader review-cursory-codex/);
+  assert.match(driftConfirm, /reviewTable\.ts dispatch --run-dir <run-dir> --stage drift-confirm-<g> --reader review-codex/);
 });
 
 test("CURSORY.4: the drift group's commands use the group's own names, the ones the scripts take", () => {
   const drift = stop("DRIFT.md");
   assert.match(step(drift, 2), /stagePlan\.ts --run-dir <run-dir> --stage drift --from <pre-merge head>` prints `stage drift-<g>`/);
-  assert.match(step(drift, 3), /reviewTable\.ts dispatch --run-dir <run-dir> --stage drift-<g> --reader review-cursory /);
-  assert.match(step(drift, 3), /`<run-dir>\/stage-drift-<g>\/review-cursory\.md`/);
+  assert.match(step(drift, 3), /reviewTable\.ts dispatch --run-dir <run-dir> --stage drift-<g> --reader review /);
+  assert.match(step(drift, 3), /`<run-dir>\/stage-drift-<g>\/review\.md`/);
   assert.match(step(drift, 4), /reviewTable\.ts build --run-dir <run-dir> --round drift-<g>`/);
   assert.match(step(drift, 4), /`table-drift-<g>\.md`, `fix-drift-<g>\.txt`/);
   assert.match(step(drift, 5), /into `stage-drift-confirm-<g>\/`/);
@@ -412,7 +405,7 @@ test("the fixer reads a HAND row's claim in the hand-test section, and its dispa
 
 test("the hand tester's report names each failed claim's cause, as CLOSE 5a and 5b need", () => {
   const line = "then one `fail (<cause>): H<k>` line per failed claim";
-  assert.ok(section(body("hand-tester"), "Report").includes(line), "hand-tester.md §Report");
+  assert.ok(section(body("hand-test"), "Report").includes(line), "hand-test.md §Report");
   assert.ok(step(stop("CLOSE.md"), 5).includes(line), "CLOSE step 5");
 });
 
@@ -460,19 +453,19 @@ test("dry-run 2, 3, 9: a session commit joins the next read by from=, owes the v
   assert.match(four, /4c\.[^\n]*When the next round has no rows, stagePlan still owes that round's read over it/);
   assert.match(four, /4c\.[^\n]*An `amend brief:` commit anywhere in a read's range owes the verifier at that read/);
   assert.match(step(close, 5), /The `sha=` of every read line is the end of the range the readers read, as stagePlan printed it — not the tree's head/);
-  assert.match(body("build-verifier"), /at any later read whose range holds an `amend brief:` commit/);
+  assert.match(body("completeness"), /at any later read whose range holds an `amend brief:` commit/);
   // a read after a fix re-grades only what the range amends or touches, in the agent and in CLOSE alike.
-  assert.match(section(body("build-verifier"), "Your file"), /Checks 0, 1, and 2 in full; Check 3 grades only the deliverables an `amend brief:` in the range adds or changes, and those whose file \(its locator in the last check log\) the range touches/);
-  assert.match(body("build-verifier"), /so at the wave run it exhaustively \(a read after a fix grades fewer: §Your file\)/);
-  assert.match(close, /a `build-verifier` line ending `run <manifest> --brief-file <brief> --no-exercise yourself` — run that command on the post-round head; a non-zero exit owes the verifier at that read/);
-  assert.doesNotMatch(body("build-verifier"), /what the four checks find now at the round's head/);
+  assert.match(section(body("completeness"), "Your file"), /Checks 0, 1, and 2 in full; Check 3 grades only the deliverables an `amend brief:` in the range adds or changes, and those whose file \(its locator in the last check log\) the range touches/);
+  assert.match(body("completeness"), /so at the wave run it exhaustively \(a read after a fix grades fewer: §Your file\)/);
+  assert.match(close, /a `completeness` line ending `run <manifest> --brief-file <brief> --no-exercise yourself` — run that command on the post-round head; a non-zero exit owes the verifier at that read/);
+  assert.doesNotMatch(body("completeness"), /what the four checks find now at the round's head/);
 });
 
 test("hand tests: a commit after final owes none; a claim the session re-runs comes before the final table's rebuild", () => {
   const one = step(stop("SHIP.md"), 1);
   assert.match(one, /\*\*A commit after the final table\*\*[^\n]*owes no hand test: a claim that passed stays passed/);
   assert.doesNotMatch(one, /the gate names stale|the PR's code changed after the final table/);
-  const hand = one.indexOf("you may spawn a fresh `hand-tester`");
+  const hand = one.indexOf("you may spawn a fresh `hand-test`");
   const table = one.indexOf("re-run `node ~/.agent-build/runtime/reviewTable.ts build --run-dir <run-dir> --round final`");
   assert.ok(hand >= 0 && table > hand, "SHIP step 1: a chosen hand tester runs before the final table is re-built");
   const close = stop("CLOSE.md");
@@ -487,8 +480,8 @@ test("hand tests: a claim is what tests do not do; a test-runner run: is no clai
   assert.match(brief, /`testRunnerOf`, `~\/\.agent-build\/runtime\/lib\/brief\.ts`\) — is no claim[^\n]*`briefCheck\.ts` exits 1 on it\. The same holds for the `<manifest>` step with no exercise to run \(`--no-exercise`, or a brief with no `exercise:` line\)[^\n]*A brief with no such claim has no hand test/);
   assert.match(brief, /has a claim that runs the `<manifest>` step on the brief with the exercise \(H2 below\), because the exercise calls live endpoints and nothing else runs it/);
   assert.match(brief, /or a claim whose `run:` is a test runner or the `<manifest>` step with no exercise is malformed/);
-  assert.match(body("hand-tester"), /A claim is what the tests do not already do: it drives the live app \(a Maestro flow\), queries the database, calls a live endpoint, or reads a log\./);
-  assert.match(body("hand-tester"), /or runs the repo's `manifest` step with no exercise \(`--no-exercise`, or a brief with no `exercise:` line\), is no claim/);
+  assert.match(body("hand-test"), /A claim is what the tests do not already do: it drives the live app \(a Maestro flow\), queries the database, calls a live endpoint, or reads a log\./);
+  assert.match(body("hand-test"), /or runs the repo's `manifest` step with no exercise \(`--no-exercise`, or a brief with no `exercise:` line\), is no claim/);
   for (const m of read("skills/build").matchAll(/^ {2}- run: `([^`]+)`$/gm)) {
     assert.equal(testRunnerOf(m[1]!), null, `a skill example claim runs a test runner: ${m[1]}`);
   }
@@ -508,7 +501,7 @@ test("dry-run 7 and 8: a stopped fixer's edits ride as a patch note; a watch tha
 
 test("dry-run 10 and 11: the first leftovers ticket has an owner, and the telemetry ingest runs sandbox-off", () => {
   const close = stop("CLOSE.md");
-  assert.match(step(close, 13), /\*\*No ticket yet\*\*[^\n]*you, the orchestrating session, create it now with the notes' ticket skill \(`\/file-linear-ticket` where the notes name it\) — one standing ticket per plan/);
+  assert.match(step(close, 13), /\*\*No ticket yet\*\*[^\n]*you, the orchestrating session, create it now with the notes' ticket skill \(`\/file-ticket`, which reads the repo's `LINEAR.md`\) — one standing ticket per plan/);
   assert.match(step(close, 13), /Until it exists[^\n]*the ledger says `pr-body`/);
   assert.match(step(close, 14), /in the repo's git common dir, outside the run tree[^\n]*`dangerouslyDisableSandbox: true`[^\n]*A dry run skips the ingest/);
 });
@@ -539,7 +532,7 @@ test("fix4 items 1, 2, 4: a re-built round keeps its head; `verifier:` repeats; 
     [
       "class: R1 — o, 2026-09-28",
       "flow: 2",
-      "wave: review-cursory | sha=aaaaaaa",
+      "wave: review | sha=aaaaaaa",
       "verifier: CLEAN | sha=aaaaaaa",
       "banked: CODEX.2 (awaiting operator)",
       "verifier: CLEAN | sha=bbbbbbb",
@@ -571,7 +564,7 @@ test("fix4 item 7: entering CLOSE on a branch built earlier — the build line's
 });
 
 test("fix4 item 8: the Codex stand-in is spawned on sonnet", () => {
-  assert.match(section(stop("CLOSE.md"), "Codex fails at a read"), /spawn a fresh `review-cursory` with `model: sonnet`/);
+  assert.match(section(stop("CLOSE.md"), "Codex fails at a read"), /spawn a fresh `review` with `model: sonnet`/);
 });
 
 test("fix4 item 9: --from-branch makes the diff first, defines <branch-slug>, pins the unattended class, and uses the repo's commit style", () => {
@@ -595,7 +588,7 @@ test("fix4 items 10, 11, 13: the DB gate runs at the run's base; one defect keep
   assert.match(four, /4e\.[^\n]*the block's title starts `same defect as claim H<k>:`/);
   assert.match(body("fixer"), /\*\*A `SESSION` row whose text starts `same defect as claim H<k>:`\*\* and row `HAND\.<k>` are one defect[^\n]*write both rows `fixed` with the same sha/);
   assert.match(four, /4b\.[^\n]*restart that server before the next hand tester starts/);
-  assert.match(body("hand-tester"), /`env`: [^\n]*a server the claim reaches still serves code older than the head/);
+  assert.match(body("hand-test"), /`env`: [^\n]*a server the claim reaches still serves code older than the head/);
 });
 
 test("fix4 items 12, 14: the banked question has a named file, and a banked run removes its fixer worktrees", () => {
@@ -625,11 +618,11 @@ test("unbank: a banked run resumes in its own run dir, never by --from-branch; o
   const unbank = stop("UNBANK.md");
   assert.match(unbank, /No new run, no wave, no fix rounds\./);
   assert.match(step(unbank, 2), /`unbank: <ids> \| from=<the head step 1 noted> \| sha=<head after the fix>`, with `\| model=<m> \| agent=<id>` when a fixer made it/);
-  assert.match(step(unbank, 3), /stagePlan\.ts --run-dir <run-dir> --stage unbank`[^\n]*spawn ONE `review-cursory`: no Codex, and no other reader/);
-  assert.match(step(unbank, 3), /`unbank-read: review-cursory \| sha=<range end>`[^\n]*no read follows unless the operator asks for one/);
+  assert.match(step(unbank, 3), /stagePlan\.ts --run-dir <run-dir> --stage unbank`[^\n]*spawn ONE `review`: no Codex, and no other reader/);
+  assert.match(step(unbank, 3), /`unbank-read: review \| sha=<range end>`[^\n]*no read follows unless the operator asks for one/);
   assert.match(step(unbank, 4), /only claims whose last run failed\), plus any you judge the fix reaches\. None named and none chosen → none run\./);
   assert.match(body("fixer"), /## An unbank round\n\nRound `unbank` fixes rows the run banked/);
-  assert.match(body("review-cursory"), /on the one read of an unbank fix, `<run-dir>\/unbank\/review-cursory\.md` in the wave's format/);
+  assert.match(body("review"), /on the one read of an unbank fix, `<run-dir>\/unbank\/review\.md` in the wave's format/);
   // The lines the text writes parse, and the read folder is the one the text names.
   const l = parseLedger(
     [
@@ -637,7 +630,7 @@ test("unbank: a banked run resumes in its own run dir, never by --from-branch; o
       "flow: 2",
       "banked: CODEX.2 (awaiting operator)",
       "unbank: CODEX.2 | from=aaaaaaa | sha=bbbbbbb | model=sonnet | agent=u1",
-      "unbank-read: review-cursory | sha=bbbbbbb",
+      "unbank-read: review | sha=bbbbbbb",
     ].join("\n")
   );
   assert.deepEqual([l.banked, l.unbank?.ids, l.unbankRead?.sha], [["CODEX.2"], ["CODEX.2"], "bbbbbbb"]);
@@ -664,11 +657,11 @@ test("CLOSE §Trees: every read has a review tree; the verifier and the simplifi
   const trees = section(close, "Trees");
   assert.match(trees, /`git worktree add --detach <inputs-dir>\/review-<stage>-<n> <range end>`/);
   assert.match(trees, /Remove the review tree \(`git worktree remove --force <inputs-dir>\/review-<stage>-<n>`\) once every reader of that read has reported and its Codex run has exited/);
-  assert.match(trees, /\*\*`build-verifier` and `simplifier` spawn with `isolation: "worktree"` instead\*\*[^\n]*`start commit: <range end>`/);
+  assert.match(trees, /\*\*`completeness` and `simplifier` spawn with `isolation: "worktree"` instead\*\*[^\n]*`start commit: <range end>`/);
   assert.match(trees, /When each reports, remove its tree: `git worktree remove --force <its path, from the spawn's result>`/);
   // Each read names its own tree: the wave, a stage read, a Codex stand-in, the drift read.
-  assert.match(step(close, 2), /`<inputs-dir>\/review-wave-1`[^\n]*`build-verifier` and `simplifier` spawn with `isolation: "worktree"` and get `start commit: <the wave head>`/);
-  assert.match(step(close, 5), /`<inputs-dir>\/review-confirm-1-1` at the range end stagePlan printed[^\n]*`build-verifier`, when owed, spawns with `isolation: "worktree"` and `start commit: <range end>`/);
+  assert.match(step(close, 2), /`<inputs-dir>\/review-wave-1`[^\n]*`completeness` and `simplifier` spawn with `isolation: "worktree"` and get `start commit: <the wave head>`/);
+  assert.match(step(close, 5), /`<inputs-dir>\/review-confirm-1-1` at the range end stagePlan printed[^\n]*`completeness`, when owed, spawns with `isolation: "worktree"` and `start commit: <range end>`/);
   assert.match(section(close, "Codex fails at a read"), /`<inputs-dir>\/review-<stage>-2` at the same range end/);
   assert.match(step(stop("DRIFT.md"), 3), /`<inputs-dir>\/review-drift-<g>-1` at the merged head/);
   // The simplifier's own file agrees: it reads its own tree at the start commit.
@@ -679,14 +672,14 @@ test("CLOSE §Trees: every read has a review tree; the verifier and the simplifi
 test("CLOSE §Trees: the hand tester pins its run tree through the harness's live-agent check or its report, and the stack only moves when nothing uses it", () => {
   const close = stop("CLOSE.md");
   const trees = section(close, "Trees");
-  assert.match(trees, /is the harness's live-agent check when it has one, asked for live `hand-tester` agents whose cwd is the run tree/);
+  assert.match(trees, /is the harness's live-agent check when it has one, asked for live `hand-test` agents whose cwd is the run tree/);
   assert.match(trees, /With no such check, the hand tester is live from its spawn until its report \(`hand-test-<n>\.txt written` or `blocked:`\) is in\./);
   assert.doesNotMatch(close, /agent-guard\.py/, "CLOSE names no harness script");
   assert.match(trees, /Empty output and exit 0 is clear; any line, or any non-zero exit, counts as live/);
   assert.doesNotMatch(close, /ls ~\/\.claude\/agent-guard/, "no session re-parses agent-guard's files");
   assert.match(trees, /\*\*The stack rule, per run tree\.\*\* Nothing changes a run's stack[^\n]*while anything uses it/);
   assert.match(trees, /After any merge that changes a schema file the notes name — a part, the freshen, a fixer — run the notes' stack refresh/);
-  assert.match(step(close, 5), /spawn a `hand-tester` un-isolated, cwd the run tree/);
+  assert.match(step(close, 5), /spawn a `hand-test` un-isolated, cwd the run tree/);
   assert.match(step(close, 4), /4b\.[^\n]*run the stack refresh \(§Trees, the stack rule\)\. Neither runs while the `--live` check \(§Trees\) prints a hand tester/);
 });
 
@@ -720,17 +713,17 @@ test("DRIFT.md: one drift group per build; main moving again after it writes dri
   assert.doesNotMatch(drift, /then 2, 3|another group|every group/);
 });
 
-test("CLOSE: security-review reads a fix only at confirm-1 and confirm-2", () => {
+test("CLOSE: security reads a fix only at confirm-1 and confirm-2", () => {
   const close = stop("CLOSE.md");
-  for (const n of [10, 11]) assert.doesNotMatch(step(close, n), /security-review/, `CLOSE step ${n}`);
-  assert.doesNotMatch(stop("DRIFT.md"), /security-review/);
-  assert.match(step(close, 8), /`security-review` at R2 on a fire/);
+  for (const n of [10, 11]) assert.doesNotMatch(step(close, n), /`security` at|security read/, `CLOSE step ${n}`);
+  assert.doesNotMatch(stop("DRIFT.md"), /security/);
+  assert.match(step(close, 8), /`security` at R2 on a fire/);
 });
 
-test("build-verifier: no Skill, isolated at its start commit, installed before Check 1, and it reads the parts", () => {
-  const fm = frontmatter("build-verifier");
+test("completeness: no Skill, isolated at its start commit, installed before Check 1, and it reads the parts", () => {
+  const fm = frontmatter("completeness");
   assert.doesNotMatch(fmLine(fm, "tools"), /\bSkill\b/);
-  const verifier = body("build-verifier");
+  const verifier = body("completeness");
   const tree = section(verifier, "Your tree");
   assert.match(tree, /\*\*First action:\*\* `git rev-parse HEAD`, as its own call, must equal the `start commit:` your dispatch names/);
   assert.match(tree, /`git switch --detach <start commit>` in your own tree/);
@@ -784,7 +777,7 @@ test("the no-log leftovers lookup selects only the standing ticket of the same p
       "wt-a-fix-y/build-2": "leftovers: pr-body | rows=1 | scope=session-1a2b3c4d",
       // Another session's ad-hoc run in the same run root.
       "wt-b-fix-z/build-3": "leftovers: QRK-99 | rows=1 | scope=session-ffff0000",
-      // A plan, its fields in the other order, and a plan whose id has QRK-5 as a prefix.
+      // A plan, its fields in the other order, and a plan whose id has the first plan's id as a prefix.
       "wt-c-feat-p/build-4": "leftovers: QRK-50 | scope=plan-QRK-5 | rows=3",
       "wt-d-feat-q/build-5": "leftovers: QRK-77 | rows=1 | scope=plan-QRK-55",
       // A plan id with a dot, and two ids it must not match: one with another character there, one it prefixes.
@@ -860,7 +853,7 @@ test("BRIEF: parts pair deliverables by position, the model is picked per part, 
   assert.match(step(brief, 6), /in the run's own tree[^\n]*\(CLOSE §Trees\)/);
 });
 
-test("trial QRK-470: the manifest parse keys on its line, one class form, one ticket comment, BRIEF's files", () => {
+test("trial of a real unit: the manifest parse keys on its line, one class form, one ticket comment, BRIEF's files", () => {
   const brief = stop("BRIEF.md");
   assert.match(step(brief, 3), /read its `brief manifest block` line, never its exit code/);
   assert.match(step(brief, 3), /`brief manifest block — parses against manifestSchema` passes; any other text on that line is a rewrite/);
@@ -877,21 +870,21 @@ test("trial QRK-470: the manifest parse keys on its line, one class form, one ti
   assert.match(body("prior-art"), /^## Stamp$/m);
 });
 
-test("trial QRK-470: exit checks accept a SESSION-named coverage gap and re-runs; the wave's beats have an order; no fixer edits a shipped migration", () => {
+test("trial of a real unit: exit checks accept a SESSION-named coverage gap and re-runs; the wave's beats have an order; no fixer edits a shipped migration", () => {
   const ten = step(stop("BUILD.md"), 10);
   assert.match(ten, /except the red tests `session\.md` names and a coverage gap a `SESSION` block names\*\*/);
   // a fix of a red check re-runs that check and the tests beside the fix, never the whole step.
   assert.match(ten, /After each fix of a red check, re-run only the check that failed and the tests beside the files the fix changed, as often as it takes; the last run of each counts/);
   assert.doesNotMatch(ten, /Re-run it after each fix of a red check/);
   assert.match(ten, /When the `<tests>` step's command is already one of the `<exit_checks>` step's commands, the `<tests>` step is not run again: the `<exit_checks>` run is its run\./);
-  assert.match(stop("CLOSE.md"), /The Claude beats take the readers in this order: the class readers first, then `build-verifier`, the `simplifier`, and the repo readers\./);
+  assert.match(stop("CLOSE.md"), /The Claude beats take the readers in this order: the class readers first, then `completeness`, the `simplifier`, and the repo readers\./);
   assert.match(stop("CLOSE.md"), /the two pools are counted apart, so every Codex run starts in the first beat/);
   assert.match(body("fixer"), /\*\*Never edit a migration already on `main`\*\*[^\n]*a schema fix is a new migration\. A comment-only edit to a migration this branch added is allowed\./);
   assert.match(body("builder"), /\*\*Never edit a migration already on `main`\*\*[^\n]*a schema change is a new migration\./);
 });
 
 test("a test that is not yet binding re-runs as its one entry, at most three tries", () => {
-  const author = body("test-author");
+  const author = body("write-tests");
   assert.match(author, /Strengthen it and re-run that one entry \(a map holding only it\) until BINDING, at most three tries; still not binding after the third, it is the finding below\./);
   assert.match(author, /The `<n>\/<m> BINDING` line counts each entry by its last run: `<m>` is the map's entries, `<n>` those whose last run was BINDING\./);
   assert.doesNotMatch(author, /Strengthen it and re-run until BINDING\./);
@@ -914,5 +907,5 @@ test("the session writes the ledger through ledgerLine.ts, and CLOSE's example c
   const args = parseLineArgs(["--ledger", "ship.md", ...argv]);
   const line = composeLine(args.move, args.text, args.fields.map(([k, v]) => [k, v === "head" ? "aaaaaaa" : v] as const));
   assert.equal(line, example[1]!.replace("<head>", "aaaaaaa"));
-  assert.deepEqual(parseLedger(`class: R1 — o, 2026-09-28\nflow: 2\n${line}\n`).waveReaders, ["review-cursory", "build-verifier"]);
+  assert.deepEqual(parseLedger(`class: R1 — o, 2026-09-28\nflow: 2\n${line}\n`).waveReaders, ["review", "completeness"]);
 });

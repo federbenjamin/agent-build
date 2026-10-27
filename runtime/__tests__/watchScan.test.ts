@@ -2,6 +2,8 @@
 // acks, the finished state, and the look it prints. Fixtures are built record by record in the shape
 // Claude Code writes (`~/.claude/projects/<p>/<session>/subagents/agent-<id>.jsonl`).
 
+import "./helpers/operatorEnv.ts";
+
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -83,8 +85,8 @@ const flags = (a: WatchedAgent, c: ScanContext): string[] => evaluate(a, c).map(
 
 test("silent fires at WATCH_SILENT_MIN with no write, not a minute below", () => {
   const recs = [prompt(0), ...edit(1)];
-  assert.deepEqual(flags(agent(recs, "review-cursory", 1), ctx(1 + DEFAULTS.WATCH_SILENT_MIN - 1)), []);
-  assert.deepEqual(flags(agent(recs, "review-cursory", 1), ctx(1 + DEFAULTS.WATCH_SILENT_MIN)), [`silent=${DEFAULTS.WATCH_SILENT_MIN}`]);
+  assert.deepEqual(flags(agent(recs, "review", 1), ctx(1 + DEFAULTS.WATCH_SILENT_MIN - 1)), []);
+  assert.deepEqual(flags(agent(recs, "review", 1), ctx(1 + DEFAULTS.WATCH_SILENT_MIN)), [`silent=${DEFAULTS.WATCH_SILENT_MIN}`]);
 });
 
 test("no-edit fires on a builder at WATCH_NO_EDIT_MIN after its last edit, not a minute below", () => {
@@ -102,12 +104,12 @@ test("no-edit counts from the segment start when the segment has no edit yet", (
   assert.deepEqual(flags(agent(recs, "fixer", L), ctx(L)), [`no-edit=${L}`]);
 });
 
-test("no-edit watches builder, fixer, and test-author only; a git commit is an edit", () => {
+test("no-edit watches builder, fixer, and write-tests only; a git commit is an edit", () => {
   const L = DEFAULTS.WATCH_NO_EDIT_MIN;
   const recs = [prompt(0), ...times(L, (i) => bash(i + 0.5, "ls"))];
-  for (const t of ["builder", "fixer", "test-author", "plugin:builder"])
+  for (const t of ["builder", "fixer", "write-tests", "plugin:builder"])
     assert.deepEqual(flags(agent(recs, t, L), ctx(L)), [`no-edit=${L}`], t);
-  for (const t of ["review-cursory", "hand-tester", "Explore", "big-boy", "little-man", null])
+  for (const t of ["review", "hand-test", "Explore", "big-boy", "little-man", null])
     assert.deepEqual(flags(agent(recs, t, L), ctx(L)), [], String(t));
   const committed = [...recs, ...bash(L - 1, "git -C /r commit -F /tmp/claude/msg.txt")];
   assert.deepEqual(flags(agent(committed, "builder", L), ctx(L)), []);
@@ -175,10 +177,10 @@ test("off-part fires at WATCH_OFF_PART_FILES distinct off-part paths, not one be
 test("off-part never counts a builder's notes in the run dir, a path outside cwd, or a path a glob entry matches", () => {
   const recs = [
     prompt(0),
-    ...editIn(1, "/Users/me/.local/state/agent-build/runs/w-fix-x/build-1/builder-P1/work-log.md", "Write"),
+    ...editIn(1, "/home/me/.local/state/agent-build/runs/w-fix-x/build-1/builder-P1/work-log.md", "Write"),
     ...editIn(1, "/tmp/claude/build-r1/notes.txt", "Write"),
     ...editIn(1, "/w/other-tree/src/q.ts"),
-    ...editIn(1, "/Users/me/.claude/agent-memory/builder/x.md", "Write"),
+    ...editIn(1, "/home/me/.claude/agent-memory/builder/x.md", "Write"),
     ...editIn(1, "lib/deep/one.ts"),
     ...editIn(1, "lib/two.ts"),
     ...editIn(1, "src/x.ts"),
@@ -288,11 +290,11 @@ test("an acked clock flag fires again a full limit after the later of the ack an
   const recs = [prompt(0), ...read(1)];
   // flagged at minute 1 + L, looked at and re-armed at minute 14 with the ack
   const acks = { "a1:silent": L };
-  assert.deepEqual(flags(agent(recs, "review-cursory", 1), ctx(14 + L - 1, acks, 14)), []);
-  assert.deepEqual(flags(agent(recs, "review-cursory", 1), ctx(14 + L, acks, 14)), [`silent=${13 + L}`]);
+  assert.deepEqual(flags(agent(recs, "review", 1), ctx(14 + L - 1, acks, 14)), []);
+  assert.deepEqual(flags(agent(recs, "review", 1), ctx(14 + L, acks, 14)), [`silent=${13 + L}`]);
   // the agent wrote after the ack: a fresh quiet period needs its own full limit
-  assert.deepEqual(flags(agent(recs, "review-cursory", 20), ctx(20 + L - 1, acks, 14)), []);
-  assert.deepEqual(flags(agent(recs, "review-cursory", 20), ctx(20 + L, acks, 14)), [`silent=${L}`]);
+  assert.deepEqual(flags(agent(recs, "review", 20), ctx(20 + L - 1, acks, 14)), []);
+  assert.deepEqual(flags(agent(recs, "review", 20), ctx(20 + L, acks, 14)), [`silent=${L}`]);
 });
 
 test("parseAck reads <agent>:<flag>:<count> and refuses an unknown flag", () => {
@@ -340,7 +342,7 @@ test("a finished agent is never flagged, however long it has been quiet", () => 
   const recs = [prompt(0), ...times(9, () => read(1)), done(2), attachment(2)];
   assert.deepEqual(flags(agent(recs, "builder", 2), ctx(300)), []);
   const handedBack = [prompt(0), ...times(9, () => read(1)), ...handback(2), attachment(2)];
-  assert.deepEqual(flags(agent(handedBack, "review-cursory", 2), ctx(300)), []);
+  assert.deepEqual(flags(agent(handedBack, "review", 2), ctx(300)), []);
 });
 
 test("a task notification after a delivered handback starts a new segment, as one after an end_turn does", () => {
@@ -368,7 +370,7 @@ test("state widens its window when the cut drops the handback call but keeps its
 });
 
 test("a Codex run (no transcript) is watched for silence only", () => {
-  const codex: WatchedAgent = { name: "review-cursory-codex", agentType: null, recs: null, lastWriteMs: T0 };
+  const codex: WatchedAgent = { name: "review-codex", agentType: null, recs: null, lastWriteMs: T0 };
   assert.deepEqual(flags(codex, ctx(DEFAULTS.WATCH_SILENT_MIN - 1)), []);
   assert.deepEqual(flags(codex, ctx(60)), ["silent=60"]);
 });
@@ -398,14 +400,14 @@ test("describeCall keeps a target to 60 characters: a command's head, a path's t
   const cmd = describeCall({ tool: "Bash", input: { command: `pnpm -F core test ${"x".repeat(80)}` } });
   assert.equal(cmd.length, "Bash ".length + 60);
   assert.match(cmd, /^Bash pnpm -F core test x+…$/);
-  const path = describeCall({ tool: "Edit", input: { file_path: `/Users/me/${"deep/".repeat(20)}index.ts` } });
+  const path = describeCall({ tool: "Edit", input: { file_path: `/home/me/${"deep/".repeat(20)}index.ts` } });
   assert.equal(path.length, "Edit ".length + 60);
   assert.match(path, /^Edit ….*\/index\.ts$/);
 });
 
 test("describeCall shows a command past its leading cd", () => {
   const d = (command: string): string => describeCall({ tool: "Bash", input: { command } });
-  assert.equal(d("cd /Users/me/src/app/.claude/worktrees/agent-a1 && deno test x.ts"), "Bash deno test x.ts");
+  assert.equal(d("cd /home/me/src/app/.claude/worktrees/agent-a1 && deno test x.ts"), "Bash deno test x.ts");
   assert.equal(d('cd "/a b" ; cd c && git status'), "Bash git status");
   assert.equal(d("cd /x"), "Bash cd /x");
 });

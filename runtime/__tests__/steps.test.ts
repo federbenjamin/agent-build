@@ -1,7 +1,9 @@
 /** steps.ts --template: the build-steps.toml a new repo starts from, and the one writer of it. */
+import "./helpers/operatorEnv.ts";
+
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -28,4 +30,25 @@ test("--template prints a file that names only known steps, all commented out, a
   const noName = spawnSync("node", [STEPS, "--template"], { encoding: "utf8" });
   assert.equal(noName.status, 2);
   assert.match(noName.stderr, /--template needs the repo's name/);
+});
+
+test("resolveSteps hands a given env to the git probes it makes", () => {
+  const dir = mkdtempSync(join(tmpdir(), "steps-env-"));
+  const env = { PATH: process.env.PATH, ONLY: "this" };
+  try {
+    execFileSync("git", ["init", "-q", dir]);
+    const bin = join(dir, "bin");
+    mkdirSync(bin);
+    const log = join(dir, "env.log");
+    writeFileSync(join(bin, "git"), `#!/bin/sh\nprintf '%s\\n' "$ONLY" >> ${log}\nexec ${execFileSync("which", ["git"], { encoding: "utf8" }).trim()} "$@"\n`);
+    chmodSync(join(bin, "git"), 0o755);
+    process.env.ONLY = "ours-should-not-reach-git";
+    resolveSteps(dir, { env: { ...env, PATH: `${bin}:${env.PATH}` } });
+    const lines = readFileSync(log, "utf8").trim().split("\n");
+    assert.ok(lines.length >= 1);
+    assert.ok(lines.every((l) => l === "this"), lines.join(","));
+  } finally {
+    delete process.env.ONLY;
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

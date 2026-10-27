@@ -7,6 +7,8 @@
 //   - a branch with no merged PR, with a commit made after the PR's head, or checked out is kept,
 //     and the script exits 1.
 
+import "./helpers/operatorEnv.ts";
+
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -25,10 +27,8 @@ writeFileSync(join(fakeBin, "gh"), '#!/bin/sh\n[ "$1 $2" = "pr list" ] && printf
 chmodSync(join(fakeBin, "gh"), 0o755);
 
 function sh(cwd: string, command: string, args: string[], mergedHeads = "") {
-  const clean: NodeJS.ProcessEnv = {};
-  for (const [k, v] of Object.entries(process.env)) if (!k.startsWith("GIT_")) clean[k] = v;
   const env = {
-    ...clean,
+    ...process.env,
     PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
     GIT_CONFIG_GLOBAL: "/dev/null",
     GIT_CONFIG_NOSYSTEM: "1",

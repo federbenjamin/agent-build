@@ -1,5 +1,7 @@
 /** stagePlan: the printed plan for one read after a fix — range, readers, hand-test claims and their
  *  needs — and its exit codes, over throwaway repos with a fake signals arm. */
+import "./helpers/operatorEnv.ts";
+
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
@@ -26,10 +28,10 @@ test("confirm-1 at R2 prints the range, both signals with their source, each rea
     assert.equal(r.code, 0, r.err.join("\n"));
     assert.deepEqual(r.out, [
       `stage confirm-1 · range ${run.wave.slice(0, 9)}..${s1.slice(0, 9)} · pr-code: changed (1 path) (source repo) · fix-security: fires (path src/auth.ts) (source repo)`,
-      "reader: review-cursory-codex — owed (every read after a fix)",
-      "reader: gate-silent-failure-hunter — sits out (6 counted lines < 20, no catch/await/Promise)",
-      "reader: security-review — owed (R2; fix-security fires)",
-      "reader: build-verifier — not owed (no amend brief:, no rename); run <manifest> --brief-file <brief> --no-exercise yourself",
+      "reader: review-codex — owed (every read after a fix)",
+      "reader: silent-failures — sits out (6 counted lines < 20, no catch/await/Promise)",
+      "reader: security — owed (R2; fix-security fires)",
+      "reader: completeness — not owed (no amend brief:, no rename); run <manifest> --brief-file <brief> --no-exercise yourself",
       "hand-test: all claims (H1) · needs: stack",
     ]);
   }, R2_BRIEF);
@@ -43,7 +45,7 @@ test("an `amend brief:` that changes only hand-test text owes no verifier, and p
     assert.equal(r.code, 0, r.err.join("\n"));
     assert.ok(
       r.out.includes(
-        "reader: build-verifier — not owed (the `amend brief:` commit changes no deliverable or assertion, no rename); run <manifest> --brief-file <brief> --no-exercise yourself"
+        "reader: completeness — not owed (the `amend brief:` commit changes no deliverable or assertion, no rename); run <manifest> --brief-file <brief> --no-exercise yourself"
       ),
       r.out.join("\n")
     );
@@ -72,7 +74,7 @@ test("at R1 the security read is not asked (the R2-only rule)", async () => {
     const r = await plan(run, ["--stage", "confirm-1"]);
     assert.equal(r.code, 0, r.err.join("\n"));
     assert.match(r.out[0]!, / · fix-security: not asked \(R1\)$/);
-    assert.ok(r.out.includes("reader: security-review — not owed (R1; the security read of a fix is R2 only)"), r.out.join("\n"));
+    assert.ok(r.out.includes("reader: security — not owed (R1; the security read of a fix is R2 only)"), r.out.join("\n"));
   });
 });
 
@@ -112,7 +114,7 @@ test("branch=: a tree on another branch than the ledger's is exit 2 with the mes
 test("one drift group per build: `--stage drift` from another head than the recorded group's start is exit 2", async () => {
   await withRun(async (run) => {
     const later = run.commit({ "src/app.ts": "export const a = 7;\n" }, "later");
-    run.ledger([...briefedHead("R1", run.wave), `drift-read: review-cursory | from=${run.wave} | files=1 | sha=${run.wave}`]);
+    run.ledger([...briefedHead("R1", run.wave), `drift-read: review | from=${run.wave} | files=1 | sha=${run.wave}`]);
     const r = await plan(run, ["--stage", "drift", "--from", later]);
     assert.deepEqual([r.code, r.err], [2, ["stagePlan: one drift group per build — merge main, write `drift-merge:`; SHIP's pre-push checks cover it"]]);
   });

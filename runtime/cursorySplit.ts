@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * cursorySplit — where to cut a wave's `review-cursory` read in two (CLOSE §The readers: above
+ * cursorySplit — where to cut a wave's `review` read in two (CLOSE §The readers: above
  * `WAVE_CURSORY_SPLIT_LINES`, two spawns with exclusive slices, cut at the folder boundary closest to
  * half the counted lines). It runs the repo's `size` step once per changed file, in the step's own
  * currency, and sums the counts into every folder at every depth, so the cut is read off, never

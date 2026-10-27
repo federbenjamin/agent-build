@@ -10,16 +10,16 @@ builder that silently dropped a deliverable passes it. Five places keep the auth
 apart:
 
 1. **The verifier grades against an oracle the builder did not write**: the brief, committed as the branch's first commit, so a dropped deliverable is a finding rather than a silence. It runs on Sonnet whoever wrote the code, because fresh, author-agnostic eyes are the point.
-2. **Test writers hold no stake in the implementation.** Three or more tests go to `test-author`, which the session spawns beside the builder (never the builder itself) and hands only its slice of the brief. It pins the contract and the observed behavior, never the author's intent, and never edits production source.
+2. **Test writers hold no stake in the implementation.** Three or more tests go to `write-tests`, which the session spawns beside the builder (never the builder itself) and hands only its slice of the brief. It pins the contract and the observed behavior, never the author's intent, and never edits production source.
 3. **The fixer is a fresh spawn, never the builder.** Once a builder reports done, every finding goes to the fix table and a new `fixer`; a builder is never resumed for a finding, and a fixer is never resumed.
 4. **Every fix is re-read by a fresh reader.** It holds nothing from the wave and answers each row the fixer marked `fixed` as `resolved` or `unresolved`. A wave reader is never resumed for this: by then it has sat idle past the prompt-cache window, and a resume re-reads its whole wave transcript at full price.
-5. **The hand-test claims are written before the code**, in the brief, and run by `hand-tester`, which edits no code. The session never runs a claim, never writes a fix, and never builds a fix table by hand.
+5. **The hand-test claims are written before the code**, in the brief, and run by `hand-test`, which edits no code. The session never runs a claim, never writes a fix, and never builds a fix table by hand.
 
 The ship gate then checks the run against facts no agent wrote (below).
 
 ## The brief predates the code
 
-`build-verifier` first proves the brief came before the code. A path-scoped `git log` cannot prove
+`completeness` first proves the brief came before the code. A path-scoped `git log` cannot prove
 it: a brief written after the code, against a diff its author had already read, returns one commit
 and reads clean. An oracle the code's author edited is no oracle at all, so a later edit to the
 brief is legal only as a visible `amend brief:` commit that states its reason; any other later
@@ -29,7 +29,7 @@ A hand-test claim may be added or reworded by any `amend brief:` commit, and rem
 `amend brief: operator change:` commit. The ship gate counts the claims at the brief's first commit
 and at HEAD, and fails a drop with no operator change between them.
 
-The brief-writer is told why the brief carries this weight: nobody downstream re-reads the plan
+The write-brief is told why the brief carries this weight: nobody downstream re-reads the plan
 against the code, so the brief is the last point where a wrong plan is cheap to fix. A defect
 carried into the brief costs a builder run, a review round, and a fix round before anyone sees it.
 
@@ -76,6 +76,16 @@ decision. The session answers each decision the code, the docs, or its own brief
 PR stays a draft with the question under `## Open questions`, the other rows go on through every
 round, and the session starts every unit that does not depend on this one. When the operator
 answers, the same run resumes, fixes only the banked rows, reads that fix once, and ships.
+
+In a graph run (`graph/`) the `answer-question` agent makes the session's call: it answers from what is
+written, naming its source and what it searched, or hands the question to the operator with what it
+searched. It never invents an answer, and a brief change it proposes waits on the operator's
+approval, because a wrong answer it gives reaches the code as a row; the PR body lists every answer
+and where it came from. Nothing is banked in a graph run: the operator's question waits inside the
+run, and where a run would have left a draft it waits on the operator at its merge node instead
+([graph/README.md, The build graph's ship path](../graph/README.md#the-build-graphs-ship-path) has
+when it waits and the two replies). It never ends on a draft nobody was told about, because a draft
+left behind is work the operator must notice to finish.
 
 ## Subagents never push
 

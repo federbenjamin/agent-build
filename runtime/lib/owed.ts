@@ -42,11 +42,9 @@ import {
   driftRound,
   FIXED_ROUND_IDS,
   type FinalRound,
-  type FixFile,
   type FixRound,
   type HandTestLine,
   isFixedAt,
-  parseFixFile,
   parseHandTestFile,
   parseTableJson,
   parseVerdict,
@@ -54,6 +52,7 @@ import {
   type RoundId,
   type TableJson,
 } from "./runFiles.ts";
+import { type FixFile, parseFixFile } from "./fixFile.ts";
 import {
   armEnvFailure,
   type ArmDeps,
@@ -113,11 +112,11 @@ export function fixOfRound(ledger: Ledger, r: FixRound): { move: string; file: s
   return { move, file, line: ledger.fixes.get(move) ?? null };
 }
 
-const CODEX = "review-cursory-codex";
-const HUNTER = "gate-silent-failure-hunter";
-const SECURITY = "security-review";
-const VERIFIER = "build-verifier";
-const CURSORY = "review-cursory";
+const CODEX = "review-codex";
+const HUNTER = "silent-failures";
+const SECURITY = "security";
+const VERIFIER = "completeness";
+const CURSORY = "review";
 const HUNTER_WORDS = /\b(?:catch|await|Promise)\b/;
 const AMEND_BRIEF = "amend brief:";
 const ONE_DRIFT_GROUP_PLAN = "one drift group per build — merge main, write `drift-merge:`; SHIP's pre-push checks cover it";
@@ -667,7 +666,7 @@ function hunterPlan(ctx: RunContext, diff: string): ReaderPlan {
   };
 }
 
-/** The stages whose read may owe security-review (at R2, when the fix trigger fires). After fix round
+/** The stages whose read may owe security (at R2, when the fix trigger fires). After fix round
  *  2 — the last read, the escalate read, and the drift group — it never reads a fix. */
 export const SECURITY_STAGES: ReadonlySet<PlanStage> = new Set(["confirm-1", "confirm-2"]);
 const SECURITY_NOT_HERE: ReaderPlan = { reader: SECURITY, verdict: "not owed", why: "the security read of a fix is confirm-1 and confirm-2 only" };
@@ -992,6 +991,23 @@ function driftMergeCheckpoint(ctx: RunContext, groupEndSha: string, failures: st
   return at;
 }
 
+/**
+ * The PR's code in `esc..from` that no read covered, or null when `esc` is not `from`'s ancestor.
+ * The drift group's confirm read its fix (`fix.from..confirm.sha`), so a `from=` at or after the
+ * confirm leaves unread only the code before the fix and after the confirm; a fix with no confirm
+ * was not read. Main's code (the drift read's merge, a `drift-merge:`) is never the PR's code.
+ */
+function unreadBeforeBank(ctx: RunContext, esc: string, group: DriftGroup | undefined, from: string): string[] | null {
+  const after = (a: string, b: string) => ctx.gitOk(["merge-base", "--is-ancestor", a, b]);
+  if (!after(esc, from)) return null;
+  const fix = group?.fix;
+  const confirm = group?.confirm;
+  if (fix != null && confirm != null && after(esc, fix.from) && after(confirm.sha, from)) {
+    return [...new Set([...prCodeOf(ctx, esc, fix.from).paths, ...prCodeOf(ctx, confirm.sha, from).paths])].sort();
+  }
+  return prCodeOf(ctx, esc, from).paths;
+}
+
 /** Where main's drift is measured from after these groups: the last one's end, or the wave's sha. */
 function driftCheckpoint(ctx: RunContext, groups: readonly DriftGroup[]): string | null {
   const last = groups.at(-1);
@@ -1172,7 +1188,7 @@ function checkRead(
     );
     if (!named) {
       failures.push(
-        `${label}: names no ${o.reader} — owed (${o.why})${o.reader === CODEX ? "; a failed Codex run is `review-cursory (codex failed: <why>)`" : ""}`
+        `${label}: names no ${o.reader} — owed (${o.why})${o.reader === CODEX ? "; a failed Codex run is `review (codex failed: <why>)`" : ""}`
       );
     }
   }
@@ -1472,15 +1488,15 @@ export function owedFactsFrom(ctx: RunContext): OwedFacts {
     }
   } else if (v !== null) {
     if (v.verdict === "N/A") {
-      failures.push("verifier: N/A (from-branch, no brief) with no `from-branch:` line — only the line proves no brief exists (QRK-596)");
+      failures.push("verifier: N/A (from-branch, no brief) with no `from-branch:` line — only the line proves no brief exists");
     } else if (v.verdict === "CLEAN") {
       // The verifier's last read wins: the wave's, or the latest read after a fix that owed it.
       const reads = [
-        "build-verifier.md",
-        ...["confirm-1", "confirm-2", "last", "escalate"].map((s) => `stage-${s}/build-verifier.md`),
-        ...groups.map((_, i) => `${readMoveFolder("drift-confirm", i + 1)}/build-verifier.md`),
+        "completeness.md",
+        ...["confirm-1", "confirm-2", "last", "escalate"].map((s) => `stage-${s}/completeness.md`),
+        ...groups.map((_, i) => `${readMoveFolder("drift-confirm", i + 1)}/completeness.md`),
       ];
-      const rel = reads.filter((f) => existsSync(join(ctx.runDir, f))).at(-1) ?? "build-verifier.md";
+      const rel = reads.filter((f) => existsSync(join(ctx.runDir, f))).at(-1) ?? "completeness.md";
       const file = join(ctx.runDir, rel);
       if (!existsSync(file)) failures.push(`verifier: CLEAN — no ${rel} in the run dir`);
       else {
@@ -1580,10 +1596,11 @@ export function owedFactsFrom(ctx: RunContext): OwedFacts {
     if (u.model !== null && model !== null && u.model !== model) failures.push(`unbank: model=${u.model} — this run owes ${model}`);
     if (!ctx.gitOk(["merge-base", "--is-ancestor", u.from, u.sha])) failures.push(`unbank: from=${u.from} is not an ancestor of sha=${u.sha}`);
     if (!ctx.gitOk(["merge-base", "--is-ancestor", u.sha, "HEAD"])) failures.push(`unbank: sha=${u.sha} is not an ancestor of HEAD ${ctx.head}`);
-    // `from=` is the head the run banked at: the escalate round's end, or a later head with no PR code between.
+    // `from=` is the head the run banked at: the escalate round's end, the drift group's confirm, or a
+    // later head with no unread PR code between.
     const esc = fixOfRound(ledger, "escalate").line?.sha ?? table?.rounds.escalate?.head ?? null;
     if (esc !== null) {
-      const unread = ctx.gitOk(["merge-base", "--is-ancestor", esc, u.from]) ? prCodeOf(ctx, esc, u.from).paths : null;
+      const unread = unreadBeforeBank(ctx, esc, groups.at(-1), u.from);
       if (unread === null || unread.length > 0) {
         failures.push(
           `unbank: from=${u.from} — the run banked at the escalate round's end ${esc}${unread === null ? ", which is not its ancestor" : `, and the PR's code changed after it with no read (${shown(unread)})`}; from= is the head the run banked at`

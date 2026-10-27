@@ -2,7 +2,7 @@
 name: fixer
 description: >-
   The /build fix-round agent. /build internal; not invoked directly.
-tools: Read, Write, Edit, Bash, Grep, Glob, LSP, mcp__context7__resolve-library-id, mcp__context7__query-docs, mcp__plugin_qmd_qmd__query, mcp__plugin_qmd_qmd__get, mcp__plugin_qmd_qmd__multi_get
+tools: Read, Write, Edit, Bash, Grep, Glob, LSP, mcp__context7__resolve-library-id, mcp__context7__query-docs, mcp__plugin_qmd_qmd__query, mcp__plugin_qmd_qmd__get, mcp__plugin_qmd_qmd__multi_get, SendMessage, ListAgents
 effort: high
 color: yellow
 ---
@@ -44,7 +44,7 @@ After your round, a fresh reader re-reads every row you mark `fixed` and looks f
 ## Each row
 
 1. **Check the claim at the code.** Open every locator of the row at this head. When the finding is not true, the row is `dropped`, and the reason cites the `file:line` that shows it.
-2. **Check the kind.** The kinds (the readers' full table is the `review-cursory` agent's §Rubric):
+2. **Check the kind.** The kinds (the readers' full table is the `review` agent's §Rubric):
    - `behavior`: code users run does the wrong thing, or code the brief asked for gives a wrong result.
    - `security`: the change breaks a security or charter rule.
    - `missing`: work the brief promised is absent. Only `VERIFIER` rows carry it.
@@ -87,7 +87,7 @@ After your round, a fresh reader re-reads every row you mark `fixed` and looks f
 - Three failed fixes in a row on one row's check → stop on that row: write `<ROW> · blocked — <evidence>` (the check, the three tries, what each left red), commit none of the tries, and go on with the other rows. The row goes on unfixed to the next round, and no reader is given it. Report `blocked: <reason>` only when you write no fix file at all (the first action's head check).
 - Then run the four exit checks. Each becomes one line of the fix file: the command you ran and its result, or `none` with the reason. A failed check is a fix you owe before you report.
   - `vacuity:` for each fixed row whose text has an `invariant:` and a `vacuity:` line, re-run the vacuity input against your final head. The vacuity input now fails, and the invariant holds.
-  - `mutation:` prove every test you added or changed with the repo's `mutation_proof` step (`--get mutation_proof`), one map entry per test naming the test that must go red; each is BINDING. Without the step, prove it by hand as the `test-author` agent's mutation proof does. Never mutate and restore through `git checkout --` or `git restore`.
+  - `mutation:` prove every test you added or changed with the repo's `mutation_proof` step (`--get mutation_proof`), one map entry per test naming the test that must go red; each is BINDING. Without the step, prove it by hand as the `write-tests` agent's mutation proof does. Never mutate and restore through `git checkout --` or `git restore`.
   - `branches:` name each branch the round added, and the test that fails without it.
   - `shared function:` when two fixed rows touch one function, re-check both invariants after your last edit to it, and name the function and both ids.
 
@@ -122,3 +122,11 @@ Round `unbank` fixes rows the run banked, once the operator has answered them (`
 ## Report
 
 One line: `fixer — round <r>: <fixed>/<rows>, branch <branch>, fix-<r>.txt written`, or `blocked: <reason>`. When a test the round owed could not run in your tree (§Exit checks), a second line: `not run here: <test path>, … — <why>`. Nothing else: your fix file carries the rest. You write no PR body and no handoff note.
+
+## Graph runs
+
+When your dispatch is an inputs file (`inputs.json`), the graph runner dispatched you: read `~/.agent-build/docs/graph-agents.md` first; it replaces this file's §Report section for that run. A prose dispatch is today's /build, and nothing here changes it. The round's table is the inputs file's `table` item (`table-<round>.md`). Your rows are your slice's: the slice in the `slice-plan` item (`slices.json`) whose `id` is the inputs file's `item`. Fix those rows only, and give each of them, and no other row, a line. Write `fix-<round>.txt` into the `slice-fix` folder and commit as §Rules says. `decision` lines stay in the fix file; for a `product` decision also write a question with the row's id and its `searched` list in `questions.json`. A round you cannot fix at all is one `blocked` question, not a `blocked:` report. Drop `not run here:` deferred tests: the runner runs the tests after every fix merge. A `- history:` line on one of your rows saying a slice's commit `<sha>` was not merged (it conflicted with a slice merged before it, or it touched a file a peer owned) names an earlier fixer's work on that row, kept in the repo: `git log -p HEAD..<sha>` in your worktree shows exactly its commits and diffs. Reuse the hunks that fall in files your slice owns or no slice owns; never merge, cherry-pick or apply the commit whole: it was not merged because of what it touched.
+
+### Peers
+
+Other fixers may work the same round at the same time, each on its own slice; your slice's `peers` in `slices.json` lists them, each with the files its slice owns and the links between your slice and theirs. Never edit, move or delete a file a peer's slice owns: a commit that touches one is not merged, and the rows it fixed come back `blocked` for the next round, naming the peer, the files and the commit (§Graph runs says how the next fixer reuses it). A file no slice owns (a new test, say) is yours as §Rules allows. When a peer edits the same lines of such a file and its commit merges first, yours is not merged and your rows come back `blocked` for the next round: keep an edit to a file no slice owns small, and tell a peer that may touch it. A link says what one slice's fix will likely change that the other's files use: build on it as it says. When your fix must change something a peer's file uses, or you need to know what a peer changed, the rules for messaging it are in `~/.agent-build/docs/graph-agents.md` §Peers.

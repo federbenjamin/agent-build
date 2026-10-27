@@ -1,6 +1,8 @@
 // install.sh against a temp HOME: never the real ~/.agent-build, whose links running builds use.
 // Every run gets a PATH of the temp HOME's bin plus the system dirs, so the real `claude` never
 // runs against the operator's plugin config; a test that wants one writes a stub there.
+import "../runtime/__tests__/helpers/operatorEnv.ts";
+
 import { test } from "node:test";
 import { spawnSync } from "node:child_process";
 import assert from "node:assert/strict";
@@ -10,7 +12,7 @@ import { join } from "node:path";
 
 const REPO = realpathSync(new URL("..", import.meta.url).pathname);
 const SCRIPT = join(REPO, "install.sh");
-const NAMES = ["runtime", "skills", "agents"];
+const NAMES = ["runtime", "skills", "agents", "docs", "graph"];
 
 /** A fresh temp HOME, removed after `fn`; `fn` gets it and its `.agent-build` path. */
 function withHome(fn) {
@@ -24,9 +26,23 @@ function withHome(fn) {
 }
 
 function run(home, ...args) {
+  return runScript(SCRIPT, home, ...args);
+}
+
+function runScript(script, home, ...args) {
   const PATH = `${join(home, "bin")}:/usr/bin:/bin`;
-  const r = spawnSync("/bin/sh", [SCRIPT, ...args], { encoding: "utf8", env: { ...process.env, HOME: home, PATH } });
+  const r = spawnSync("/bin/sh", [script, ...args], { encoding: "utf8", env: { ...process.env, HOME: home, PATH } });
   return { status: r.status, out: r.stdout, err: r.stderr };
+}
+
+/** A copy of install.sh in a checkout of its own under `home` (the five folders, graph/ with its
+ *  dependencies installed or not), so --check reads that graph/node_modules, never this repo's. */
+function fakeCheckout(home, { deps }) {
+  const root = join(home, "checkout");
+  for (const name of NAMES) mkdirSync(join(root, name), { recursive: true });
+  if (deps) mkdirSync(join(root, "graph", "node_modules"));
+  writeFileSync(join(root, "install.sh"), readFileSync(SCRIPT, "utf8"));
+  return { root, run: (...args) => runScript(join(root, "install.sh"), home, ...args) };
 }
 
 const PLUGIN = "agent-build@agent-build";
@@ -121,12 +137,51 @@ function assertLinked(dest) {
   }
 }
 
-test("fresh install makes the three links into this repo", () => {
+test("fresh install makes the five links into this repo", () => {
   withHome((home, dest) => {
     const r = run(home);
     assert.equal(r.status, 0, r.err);
     assertLinked(dest);
     for (const name of NAMES) assert.ok(r.out.includes(`${join(dest, name)}: linked`), r.out);
+    assert.ok(r.out.includes(`graph: not installed until you run: pnpm --dir ${REPO}/graph install --frozen-lockfile (no pnpm on PATH)`), "no pnpm on PATH: the command, and that the graph is not installed");
+  });
+});
+
+/** A `pnpm` stub in the temp HOME's bin that logs its argv and fails while `$HOME/pnpm-fails` exists. */
+function stubPnpm(home) {
+  const bin = join(home, "bin");
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(join(bin, "pnpm"), `#!/bin/sh\necho "$*" >> "$HOME/pnpm-calls.log"\n[ -f "$HOME/pnpm-fails" ] && { echo "lockfile out of date"; exit 1; }\nexit 0\n`);
+  chmodSync(join(bin, "pnpm"), 0o755);
+}
+
+test("with pnpm on PATH the install runs its frozen install once in graph/, and a failed one exits 1 with its output", () => {
+  withHome((home) => {
+    stubPnpm(home);
+    const r = run(home);
+    assert.equal(r.status, 0, r.err);
+    assert.equal(readFileSync(join(home, "pnpm-calls.log"), "utf8"), `--dir ${REPO}/graph install --frozen-lockfile\n`);
+    assert.ok(r.out.includes("graph: dependencies installed"), r.out);
+    writeFileSync(join(home, "pnpm-fails"), "");
+    const bad = run(home);
+    assert.equal(bad.status, 1);
+    assert.match(bad.err, /lockfile out of date\ninstall\.sh: pnpm --dir .*\/graph install --frozen-lockfile failed; the links are made, and the plugin steps run next/);
+  });
+});
+
+test("a failed graph install still runs the plugin steps, and the install then exits 1", () => {
+  withHome((home) => {
+    stubPnpm(home);
+    writeFileSync(join(home, "pnpm-fails"), "");
+    const claude = stubClaude(home);
+    const r = run(home);
+    assert.equal(r.status, 1, r.out);
+    assert.equal(claude.calls(), `${LIST}${ADD}${INSTALL}${LIST}`, "the plugin is registered and installed over the failed graph install");
+    assert.deepEqual(claude.plugin(), ENABLED_HERE);
+    assert.ok(r.out.endsWith("plugin: registered and enabled\n"), r.out);
+    const again = run(home);
+    assert.equal(again.status, 1, "an install already done still exits 1 while the graph install fails");
+    assert.ok(again.out.endsWith("plugin: already installed\n"), again.out);
   });
 });
 
@@ -149,7 +204,7 @@ test("a real folder at a link's path is refused, and nothing is made or replaced
     assert.match(r.err, /\.agent-build\/skills exists and is not a symlink/);
     assert.ok(!lstatSync(join(dest, "skills")).isSymbolicLink(), "the folder is still a folder");
     assert.ok(existsSync(join(dest, "skills", "keep.txt")), "its contents are untouched");
-    for (const name of ["runtime", "agents"]) assert.ok(!existsSync(join(dest, name)), `${name} was not linked`);
+    for (const name of ["runtime", "agents", "docs"]) assert.ok(!existsSync(join(dest, name)), `${name} was not linked`);
   });
 });
 
@@ -168,17 +223,18 @@ test("a link that aims elsewhere is repointed at this repo, and its old target i
   });
 });
 
-test("--check prints each state, changes nothing, and exits non-zero unless all three are ok", () => {
+test("--check prints each state, changes nothing, and exits non-zero unless all five are ok", () => {
   withHome((home, dest) => {
+    const checkout = fakeCheckout(home, { deps: true });
     // All missing.
-    let r = run(home, "--check");
+    let r = checkout.run("--check");
     assert.equal(r.status, 1);
     for (const name of NAMES) assert.ok(r.out.includes(`${join(dest, name)}: missing`), r.out);
     assert.ok(!existsSync(dest), "--check made nothing");
 
     // All ok.
-    assert.equal(run(home).status, 0);
-    r = run(home, "--check");
+    assert.equal(checkout.run().status, 0);
+    r = checkout.run("--check");
     assert.equal(r.status, 0, r.out);
     for (const name of NAMES) assert.ok(r.out.includes(`${join(dest, name)}: ok`), r.out);
 
@@ -190,7 +246,7 @@ test("--check prints each state, changes nothing, and exits non-zero unless all 
     rmSync(join(dest, "skills"));
     mkdirSync(join(dest, "skills"));
     rmSync(join(dest, "runtime"));
-    r = run(home, "--check");
+    r = checkout.run("--check");
     assert.equal(r.status, 1);
     assert.ok(r.out.includes(`${join(dest, "agents")}: points at ${elsewhere}`), r.out);
     assert.ok(r.out.includes(`${join(dest, "skills")}: not a symlink`), r.out);
@@ -198,6 +254,19 @@ test("--check prints each state, changes nothing, and exits non-zero unless all 
     assert.equal(readlinkSync(join(dest, "agents")), elsewhere, "--check left the stray link alone");
     assert.ok(!lstatSync(join(dest, "skills")).isSymbolicLink(), "--check left the folder alone");
     assert.ok(!existsSync(join(dest, "runtime")), "--check made no link");
+  });
+});
+
+test("--check fails, saying so, when graph/'s dependencies are missing though every link is ok", () => {
+  withHome((home, dest) => {
+    const checkout = fakeCheckout(home, { deps: false });
+    assert.equal(checkout.run().status, 0, "no pnpm on PATH: the links are made, the command is printed");
+    const r = checkout.run("--check");
+    assert.equal(r.status, 1, r.out);
+    for (const name of NAMES) assert.ok(r.out.includes(`${join(dest, name)}: ok`), r.out);
+    assert.ok(r.out.includes(`graph: dependencies missing (pnpm --dir ${checkout.root}/graph install --frozen-lockfile)`), r.out);
+    mkdirSync(join(checkout.root, "graph", "node_modules"));
+    assert.equal(checkout.run("--check").status, 0);
   });
 });
 

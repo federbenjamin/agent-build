@@ -1,19 +1,26 @@
 #!/bin/sh
 # Links this repo into ~/.agent-build, the one path the skill, its agents, and its runtime name the
-# build system by, then registers this checkout as a Claude Code plugin marketplace and enables
-# the plugin from it in place. The three links:
+# build system by, installs the graph runner's dependencies, then registers this checkout as a
+# Claude Code plugin marketplace and enables the plugin from it in place. The five links:
 #   ~/.agent-build/runtime -> <this repo>/runtime
 #   ~/.agent-build/skills  -> <this repo>/skills
 #   ~/.agent-build/agents  -> <this repo>/agents
+#   ~/.agent-build/docs    -> <this repo>/docs
+#   ~/.agent-build/graph   -> <this repo>/graph
 # A path that exists and is not a symlink is refused, and then no link is made or changed.
 #
-#   install.sh          make the links; each is reported linked, unchanged, or repointed; then the
-#                       plugin: already installed, registered and enabled, repointed at this
-#                       checkout, enabled, or (no `claude` on PATH) the two commands to run later.
-#                       It exits 1 when a `claude` command fails, or when `claude plugin list
-#                       --json` does not then show the plugin enabled and read from this checkout.
+#   install.sh          make the links; each is reported linked, unchanged, or repointed; then
+#                       `pnpm install --frozen-lockfile` in graph/ (or, with no `pnpm` on PATH, the
+#                       command to run, and that the graph runner is not installed until it runs);
+#                       then the plugin: already installed, registered and enabled, repointed at
+#                       this checkout, enabled, or (no `claude` on PATH) the two commands to run
+#                       later. A failed graph install is reported and the plugin steps still run.
+#                       It exits 1 when the graph install or a `claude` command fails, or when
+#                       `claude plugin list --json` does not then show the plugin enabled and read
+#                       from this checkout.
 #   install.sh --check  change nothing; print each link's state (ok, missing, points at <x>,
-#                       not a symlink); exit 1 unless all three are ok
+#                       not a symlink), and whether graph/'s dependencies are installed; exit 1
+#                       unless all five links are ok and they are
 set -eu
 
 case "${1-}" in
@@ -24,7 +31,7 @@ esac
 
 repo=$(cd "$(dirname "$0")" && pwd -P)
 dest="$HOME/.agent-build"
-names="runtime skills agents"
+names="runtime skills agents docs graph"
 
 # True when the link at $1 already reaches $2: by its text, or by the folder it resolves to.
 aims_at() {
@@ -45,6 +52,10 @@ if [ "$check" = 1 ]; then
     fi
     echo "$link: $state"
   done
+  if [ ! -d "$repo/graph/node_modules" ]; then
+    echo "graph: dependencies missing (pnpm --dir $repo/graph install --frozen-lockfile)"
+    bad=1
+  fi
   exit "$bad"
 fi
 
@@ -77,18 +88,35 @@ for name in $names; do
   fi
 done
 
+# Run "$@", keeping its output in $out and showing it only when it fails; false then.
+quiet() {
+  out=$("$@" 2>&1) && return 0
+  printf '%s\n' "$out" >&2
+  return 1
+}
+
+# The graph runner (~/.agent-build/graph) has its own package. Its failed install does not stop the
+# plugin steps, the skill being the install's other half; the script exits 1 at the end instead.
+graph_failed=0
+if ! command -v pnpm >/dev/null 2>&1; then
+  echo "graph: not installed until you run: pnpm --dir $repo/graph install --frozen-lockfile (no pnpm on PATH)"
+elif quiet pnpm --dir "$repo/graph" install --frozen-lockfile; then
+  echo "graph: dependencies installed"
+else
+  echo "install.sh: pnpm --dir $repo/graph install --frozen-lockfile failed; the links are made, and the plugin steps run next" >&2
+  graph_failed=1
+fi
+
 plugin=agent-build@agent-build
 if ! command -v claude >/dev/null 2>&1; then
   echo "plugin: run later: claude plugin marketplace add $repo && claude plugin install $plugin"
-  exit 0
+  exit "$graph_failed"
 fi
-# Each `claude` call's output is shown only when it fails.
 claude_or_exit() {
-  if ! out=$(claude "$@" 2>&1); then
-    printf '%s\n' "$out" >&2
+  quiet claude "$@" || {
     echo "install.sh: claude $* failed; the links are made" >&2
     exit 1
-  fi
+  }
 }
 # Sets state to the user-scope install of the plugin, "<enabled> <the folder it reads from>",
 # or to nothing when it is not installed.
@@ -107,7 +135,7 @@ read_state() {
 # Every call that changes the plugin names user scope, the one read_state reads: `plugin enable`
 # auto-detects its scope, so a same-id project or local install would take the change instead.
 read_state
-[ "$state" = "true $repo" ] && { echo "plugin: already installed"; exit 0; }
+[ "$state" = "true $repo" ] && { echo "plugin: already installed"; exit "$graph_failed"; }
 if [ -z "$state" ]; then
   claude_or_exit plugin marketplace add --scope user "$repo"
   claude_or_exit plugin install --scope user "$plugin"
@@ -134,3 +162,4 @@ if [ "$state" != "true $repo" ]; then
   exit 1
 fi
 echo "$report"
+exit "$graph_failed"

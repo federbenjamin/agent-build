@@ -10,10 +10,14 @@
  */
 
 import {
+  BUILD_EVENT_CMD,
   BUILD_EVENT_FIELDS,
   BUILD_EVENT_NAMES,
   BUILD_EVENT_SCHEMA,
+  BUILD_EVENT_LIST_FLAGS,
   BuildEventError,
+  consumerLine,
+  eventFlag,
   formatBuildEvent,
   isBuildEventName,
   parseBuildEvent,
@@ -24,19 +28,9 @@ import { type ExecFn, runOut } from "./lib/gitOps.ts";
 import { isMain } from "./lib/isMain.ts";
 import { loadThresholds } from "./thresholds.ts";
 
-/** The environment variable a launcher sets: the consumer command line. */
-export const BUILD_EVENT_CMD = "BUILD_EVENT_CMD";
-
-/** Usage: `buildEvent.ts <event> --runid <id> [--unit <id>=<title>]… [--id <id>] [--pr <n>] [--needs <text>] [--outcome merged|unmerged]`. */
+/** Usage: `buildEvent.ts <event> --runid <id> [--plan <title>] [--plan-path <path>] [--repo <owner>/<name>] [--unit <id>=<title>]… [--id <id>] [--pr <n>] [--needs <text>] [--outcome merged|unmerged|failed|cancelled|abandoned] [--branch <name>] [--worktree <path>]…`. */
 export const USAGE =
-  "usage: buildEvent.ts <event> --runid <id> [--unit <id>=<title>]… [--id <id>] [--pr <n>] [--needs <text>] [--outcome merged|unmerged]";
-
-const flagOf = (field: string): string => (field === "units" ? "--unit" : `--${field}`);
-
-/** The consumer command line, trimmed; `""` when nobody is listening. */
-function consumerLine(env: Record<string, string | undefined>): string {
-  return (env[BUILD_EVENT_CMD] ?? "").trim();
-}
+  "usage: buildEvent.ts <event> --runid <id> [--plan <title>] [--plan-path <path>] [--repo <owner>/<name>] [--unit <id>=<title>]… [--id <id>] [--pr <n>] [--needs <text>] [--outcome merged|unmerged|failed|cancelled|abandoned] [--branch <name>] [--worktree <path>]…";
 
 /** The raw event object from argv, `at` from `now`; throws `Error` on a usage error (unknown event, unknown flag,
  *  a flag without a value, a `--unit` without `=`, a `--pr` that is not all digits). The result is not yet validated. */
@@ -46,7 +40,7 @@ export function eventFromArgv(argv: string[], now: Date): unknown {
     throw new Error(`unknown event ${JSON.stringify(event ?? "")}, expected one of: ${BUILD_EVENT_NAMES.join(", ")}`);
   }
   const fields: readonly string[] = BUILD_EVENT_FIELDS[event];
-  assertKnownFlags(flags, ["--runid", ...fields.map(flagOf)]);
+  assertKnownFlags(flags, ["--runid", ...fields.map(eventFlag)]);
   const raw: Record<string, unknown> = { schema: BUILD_EVENT_SCHEMA };
   let rest = flags;
   const single = (flag: string): string | undefined => {
@@ -60,7 +54,7 @@ export function eventFromArgv(argv: string[], now: Date): unknown {
   raw.event = event;
   for (const field of fields) {
     if (field === "units") {
-      const r = takeValues(rest, "--unit");
+      const r = takeValues(rest, eventFlag(field));
       rest = r.rest;
       raw.units = r.values.map((u) => {
         const eq = u.indexOf("=");
@@ -69,7 +63,13 @@ export function eventFromArgv(argv: string[], now: Date): unknown {
       });
       continue;
     }
-    const value = single(flagOf(field));
+    if (field in BUILD_EVENT_LIST_FLAGS) {
+      const r = takeValues(rest, eventFlag(field));
+      rest = r.rest;
+      if (r.values.length > 0) raw[field] = r.values;
+      continue;
+    }
+    const value = single(eventFlag(field));
     if (value === undefined) continue;
     if (field === "pr") {
       if (!/^\d+$/.test(value)) throw new Error(`--pr takes a PR number, got ${JSON.stringify(value)}`);

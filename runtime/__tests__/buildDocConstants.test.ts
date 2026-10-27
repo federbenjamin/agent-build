@@ -4,6 +4,8 @@
  * constant a `runtime` module exports (`RISK_CLASS_READERS`, `STAGES_FIXING`). A renamed
  * or invented tunable in the text otherwise reads as a rule nothing enforces.
  */
+import "./helpers/operatorEnv.ts";
+
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";

@@ -5,6 +5,8 @@
  * exec seam; one real-subprocess case proves the default runner end-to-end.
  */
 
+import "./helpers/operatorEnv.ts";
+
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -21,12 +23,6 @@ import {
   runOut,
   type RunOpts,
 } from "../lib/gitOps.ts";
-
-// Strip inherited GIT_* before anything spawns git (docs/rules/tests.md §Tests). This file's
-// real-subprocess cases assert that the default runner resolves THIS repo from its REPO_ROOT cwd —
-// under the lefthook pre-push hook an inherited GIT_DIR overrides that cwd, so the assertion would
-// pass for the wrong reason.
-for (const k of Object.keys(process.env)) if (k.startsWith("GIT_")) delete process.env[k];
 
 function recorder(result: string | Error) {
   const calls: { cmd: string; args: string[]; opts: RunOpts }[] = [];
@@ -108,6 +104,11 @@ test("buildExecOptions: capture default pins the process cwd, utf8, capture stdi
   assert.deepEqual(o.stdio, ["ignore", "pipe", "pipe"]);
   assert.equal(o.maxBuffer, MAX_BUFFER);
   assert.equal(o.timeout, undefined);
+});
+
+test("buildExecOptions: env is passed to the subprocess when given, and left to the default when not", () => {
+  assert.deepEqual(buildExecOptions({ env: { A: "1" } }).env, { A: "1" });
+  assert.ok(!("env" in buildExecOptions({})));
 });
 
 test("buildExecOptions: inherit flag flips stdio to inherit (capture off)", () => {

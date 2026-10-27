@@ -1,4 +1,6 @@
 /** `readerFiles` (`lib/runDir.ts`): which files in a run dir or stage folder are reader files. */
+import "./helpers/operatorEnv.ts";
+
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -66,13 +68,13 @@ test("CODEX.5: missingHandTestOutputs names each hand-test line whose output fil
 
 test("reader files: each stage reader, each slice of a split read, a named repo reader, and session.md", () => {
   const dir = runDir([
-    "review-cursory-1.md",
-    "review-cursory-2.md",
-    "review-cursory-codex.md",
-    "review-cursory-codex-2.md",
-    "gate-silent-failure-hunter.md",
-    "build-verifier.md",
-    "security-review.md",
+    "review-1.md",
+    "review-2.md",
+    "review-codex.md",
+    "review-codex-2.md",
+    "silent-failures.md",
+    "completeness.md",
+    "security.md",
     "simplifier.md",
     "comment-reader.md",
     "session.md",
@@ -81,19 +83,19 @@ test("reader files: each stage reader, each slice of a split read, a named repo 
     assert.deepEqual(
       readerFiles(dir, ["comment-reader"]).map((f) => [f.name, f.reader, f.slice]),
       [
-        ["build-verifier.md", "build-verifier", null],
         ["comment-reader.md", "comment-reader", null],
-        ["gate-silent-failure-hunter.md", "gate-silent-failure-hunter", null],
-        ["review-cursory-1.md", "review-cursory", 1],
-        ["review-cursory-2.md", "review-cursory", 2],
-        ["review-cursory-codex-2.md", "review-cursory-codex", 2],
-        ["review-cursory-codex.md", "review-cursory-codex", null],
-        ["security-review.md", "security-review", null],
+        ["completeness.md", "completeness", null],
+        ["review-1.md", "review", 1],
+        ["review-2.md", "review", 2],
+        ["review-codex-2.md", "review-codex", 2],
+        ["review-codex.md", "review-codex", null],
+        ["security.md", "security", null],
         ["session.md", "session", null],
+        ["silent-failures.md", "silent-failures", null],
         ["simplifier.md", "simplifier", null],
       ]
     );
-    assert.equal(readerFiles(dir, ["comment-reader"])[0]!.path, join(dir, "build-verifier.md"));
+    assert.equal(readerFiles(dir, ["comment-reader"])[0]!.path, join(dir, "comment-reader.md"));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -101,26 +103,26 @@ test("reader files: each stage reader, each slice of a split read, a named repo 
 
 test("not reader files: a refused file, run files, flow agents, an unnamed repo reader, old-flow names, folders", () => {
   const dir = runDir([
-    "review-cursory-codex.refused.txt",
-    "review-cursory-codex.md.refused.txt",
+    "review-codex.refused.txt",
+    "review-codex.md.refused.txt",
     "ship.md",
     "table-1.md",
     "fix-1.txt",
     "hand-test-1.txt",
     "fixer.md",
-    "hand-tester.md",
+    "hand-test.md",
     "builder.md",
     "comment-reader.md",
-    "review-cursory-codex-confirm.md",
-    "confirm-review-cursory.md",
-    "review-cursory.md",
+    "review-codex-confirm.md",
+    "confirm-review.md",
+    "review.md",
   ]);
   mkdirSync(join(dir, "stage-confirm-1"));
-  mkdirSync(join(dir, "security-review.md"));
+  mkdirSync(join(dir, "security.md"));
   try {
     assert.deepEqual(
       readerFiles(dir).map((f) => f.name),
-      ["review-cursory.md"]
+      ["review.md"]
     );
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -131,11 +133,11 @@ test("a stage folder reads the same way; a missing folder throws", () => {
   const dir = runDir([]);
   try {
     mkdirSync(join(dir, "stage-confirm-1"));
-    writeFileSync(join(dir, "stage-confirm-1", "review-cursory-codex.md"), "x");
-    writeFileSync(join(dir, "stage-confirm-1", "review-cursory.md"), "x");
+    writeFileSync(join(dir, "stage-confirm-1", "review-codex.md"), "x");
+    writeFileSync(join(dir, "stage-confirm-1", "review.md"), "x");
     assert.deepEqual(
       readerFiles(join(dir, "stage-confirm-1")).map((f) => f.reader),
-      ["review-cursory-codex", "review-cursory"]
+      ["review-codex", "review"]
     );
     assert.throws(() => readerFiles(join(dir, "stage-last")), /ENOENT/);
   } finally {

@@ -106,7 +106,7 @@ export function parseCheckLines(body: string): Record<MarkerCheckName, MarkerChe
 export interface GateCleanBodyOptions {
   /** Full 40-char (or ≥7-char short) head SHA the gate verified. */
   sha: string;
-  /** `<agent>@<prompt-short-sha>/<model>/<effort>` tokens, e.g. `builder@f00ba12/sonnet/high · build-verifier@…`. */
+  /** `<agent>@<prompt-short-sha>/<model>/<effort>` tokens, e.g. `builder@f00ba12/sonnet/high · completeness@…`. */
   provenance: string;
   /** The operator's declared risk class. */
   cls: RiskClass;

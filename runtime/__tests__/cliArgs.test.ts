@@ -4,6 +4,8 @@
  * `reviewLensSelect.ts`) delegate to.
  */
 
+import "./helpers/operatorEnv.ts";
+
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { assertKnownFlags, takeValue, takeValues } from "../lib/cliArgs.ts";

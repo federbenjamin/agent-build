@@ -1,5 +1,7 @@
 /** brief: the `model:` line, `## Target files`, `## Hand test`, `## Parts`, `## Test slices`, the
  *  target matcher, and briefCheck's output, excerpt modes, `--at`, and exit codes. */
+import "./helpers/operatorEnv.ts";
+
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -26,12 +28,8 @@ import { TSX_BIN } from "./helpers/tsxBin.ts";
 
 const SCRIPT = fileURLToPath(new URL("../briefCheck.ts", import.meta.url));
 
-// Strip inherited GIT_* before anything spawns git (docs/rules/tests.md §Tests): an inherited
-// GIT_DIR (a hook) would point the `--at` and `--base` repos at another repo.
-for (const k of Object.keys(process.env)) if (k.startsWith("GIT_")) delete process.env[k];
-
 const HEADER = ["# quick-x — a sample", "", "class: R1 — operator, 2026-09-28", "model: sonnet — the brief names every file", ""];
-const TARGETS = ["## Target files", "", "- apps/mobile/src/chat/send.ts", "- `packages/core/src/chat/**`", "- .claude/build/notes.md — the hand-tester section", ""];
+const TARGETS = ["## Target files", "", "- apps/mobile/src/chat/send.ts", "- `packages/core/src/chat/**`", "- .claude/build/notes.md — the hand-test section", ""];
 const CLAIMS = [
   "## Hand test",
   "",
@@ -436,18 +434,6 @@ test("briefCheck prints class, model, target files, claims, parts, and slices; t
     assert.equal(h.stdout, "class: R1\nclaims: 1 (H1)\n");
     const none = run([join(dir, "n.md")]);
     assert.equal(none.status, 2, "a missing file is usage");
-  });
-});
-
-test("briefCheck reads an older brief's `budget:` header line as nothing: same summary, exit 0, no budget key", () => {
-  withDir((dir) => {
-    for (const line of ["budget: 2h", "budget: 3"]) {
-      writeFileSync(join(dir, "b.md"), brief({ header: [...HEADER.slice(0, -1), line, ""] }));
-      const r = run([join(dir, "b.md")]);
-      assert.equal(r.status, 0, r.stderr);
-      assert.equal(r.stdout, `class: R1\nmodel: sonnet\ntarget-files: 3\nclaims: 2 (H1, H2)\n${IMPLICIT_LINES}`, line);
-      assert.equal(Object.hasOwn(JSON.parse(run([join(dir, "b.md"), "--json"]).stdout), "budget"), false, line);
-    }
   });
 });
 

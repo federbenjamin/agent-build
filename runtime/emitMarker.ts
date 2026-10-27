@@ -75,7 +75,7 @@ interface DispositionsFile {
 }
 
 /** The gate-CLEAN marker is the ONLY trust signal for the entire draft window (no CI runs on a
- * draft), and its `security:` line is what a later reader takes as "security-review cleared
+ * draft), and its `security:` line is what a later reader takes as "security cleared
  * this" — hand-typed, that line is bound to nothing. So bind it: `--security-return <path>`
  * derives the verdict from the reader's RAW persisted findings, in the one block shape
  * `parseFindingBlock` counts by. A shapeless return is a refusal, not a clean read — the caller
@@ -84,10 +84,10 @@ export function deriveSecurityVerdict(content: string): string {
   const count = parseFindingBlock(content).length;
   if (count === 0 && !/^NO FINDINGS\b/m.test(content)) {
     throw new Error(
-      "--security-return: no `### SEC.<n>` blocks and no NO FINDINGS line — the security-review return drifted from the block format"
+      "--security-return: no `### SEC.<n>` blocks and no NO FINDINGS line — the security return drifted from the block format"
     );
   }
-  return count === 0 ? "security-review: 0 findings" : `security-review: ${count} finding(s)`;
+  return count === 0 ? "security: 0 findings" : `security: ${count} finding(s)`;
 }
 
 /** Resolve the provenance line from CLI argv. */
@@ -134,7 +134,7 @@ export function runGateClean(argv: string[]): string {
   }
   if (!security) {
     throw new Error(
-      'gate-clean requires --security "<disposition>" (or a security field in --dispositions-file, or --security-return <security-review findings file>)'
+      'gate-clean requires --security "<disposition>" (or a security field in --dispositions-file, or --security-return <security findings file>)'
     );
   }
 

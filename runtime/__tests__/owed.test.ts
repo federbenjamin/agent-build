@@ -1,5 +1,7 @@
 /** owed: what a run owes and the facts the session did not write (build-spec §1.9), over real
  *  throwaway repos with a fake signals arm. */
+import "./helpers/operatorEnv.ts";
+
 import assert from "node:assert/strict";
 import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
@@ -64,7 +66,7 @@ function noFindingsRun(run: Run, cls = "R1"): void {
 }
 
 /** A run whose wave found CURSORY.1 (behavior), fixed at the returned sha `s1`, confirmed by
- *  `stage-confirm-1/review-cursory.md`, with every round built from those files. */
+ *  `stage-confirm-1/review.md`, with every round built from those files. */
 function oneRowRun(
   run: Run,
   opts: { fixLine?: (s1: string) => string; status?: string[]; head?: (s1: string) => string } = {}
@@ -73,7 +75,7 @@ function oneRowRun(
   run.build(["1"], run.wave);
   const s1 = run.commit({ "src/app.ts": "export const a = 3;\n" }, "fix(close): round 1 — 1 rows");
   run.write("fix-1.txt", `${opts.fixLine?.(s1) ?? `CURSORY.1 · fixed · ${s1} — a is 3`}\n${EXIT_CHECKS}\n`);
-  run.write("stage-confirm-1/review-cursory.md", stageFile(opts.status ?? ["- CURSORY.1 · resolved"]));
+  run.write("stage-confirm-1/review.md", stageFile(opts.status ?? ["- CURSORY.1 · resolved"]));
   run.handTest(1, `H1 · pass · ${s1} — hand-test-1/H1.out\n`);
   run.build(["2", "3", "escalate", "final"], opts.head?.(s1) ?? s1);
   return s1;
@@ -85,7 +87,7 @@ function oneRowLines(run: Run, s1: string): string[] {
     ...briefedHead("R1", run.wave),
     `verifier: CLEAN | sha=${run.wave}`,
     `fix-1: 1/1 | model=sonnet | agent=f1 | from=${run.wave} | sha=${s1}`,
-    `confirm-1: review-cursory (codex failed: exit 1) | sha=${s1}`,
+    `confirm-1: review (codex failed: exit 1) | sha=${s1}`,
     `hand-test-1: 1/1 | sha=${s1}`,
     `ship: https://example.test/pr/1 | sha=${s1}`,
   ];
@@ -116,14 +118,14 @@ test("a round with rows owes its fix line and confirm-1; a Codex stand-in passes
     assert.deepEqual(f.markerChecks, ["freshen", "wave", "fix", "confirm", "hand-test", "verifier"]);
     assert.deepEqual(
       f.readers["confirm-1"]?.map((r) => r.reader),
-      ["review-cursory-codex"],
+      ["review-codex"],
       "R1, 1 counted line, no await: the hunter sits out"
     );
 
-    run.ledger(lines.map((l) => (l.startsWith("confirm-1:") ? `confirm-1: review-cursory-codex | sha=${s1}` : l)));
+    run.ledger(lines.map((l) => (l.startsWith("confirm-1:") ? `confirm-1: review-codex | sha=${s1}` : l)));
     const missing = await facts(run);
     assert.deepEqual(missing.failures, [
-      "confirm-1: names review-cursory-codex — no stage-confirm-1/review-cursory-codex.md",
+      "confirm-1: names review-codex — no stage-confirm-1/review-codex.md",
     ]);
 
     run.ledger(lines.filter((l) => !l.startsWith("confirm-1:")));
@@ -136,7 +138,7 @@ test("CURSORY.1: a stage file that arrives after its round was built makes that 
     const s1 = oneRowRun(run);
     run.ledger(oneRowLines(run, s1));
     assert.deepEqual((await facts(run)).failures, []);
-    run.write("stage-confirm-1/security-review.md", stageFile([], [blk("SEC.101", "security", "src/auth.ts:1")]));
+    run.write("stage-confirm-1/security.md", stageFile([], [blk("SEC.101", "security", "src/auth.ts:1")]));
     const f = await facts(run);
     assert.ok(
       f.failures.includes("table.json round 2 is stale against the run dir (rows, consumed differ) — a file changed or arrived after it was built"),
@@ -204,9 +206,9 @@ test("CODEX.1: a reader the wave line names with no file fails", async () => {
   await withRun(async (run) => {
     noFindingsRun(run);
     const lines = readFileSync(join(run.runDir, "ship.md"), "utf8").trimEnd().split("\n");
-    run.ledger(lines.map((l) => (l.startsWith("wave:") ? l.replace("build-verifier", "build-verifier, gate-silent-failure-hunter") : l)));
+    run.ledger(lines.map((l) => (l.startsWith("wave:") ? l.replace("completeness", "completeness, silent-failures") : l)));
     assert.deepEqual((await facts(run)).failures, [
-      "wave: names gate-silent-failure-hunter — no gate-silent-failure-hunter.md in the run dir; re-spawn it, or record why it left none",
+      "wave: names silent-failures — no silent-failures.md in the run dir; re-spawn it, or record why it left none",
     ]);
   });
 });
@@ -264,17 +266,17 @@ test("unbank: a decision row the operator answered clears its table row and its 
   await withRun(async (run) => {
     const s1 = oneRowRun(run, { fixLine: () => "CURSORY.1 · decision — product — which answer does the app give?", status: [] });
     const fix = run.commit({ "src/app.ts": "export const a = 7;\n" }, "fix(unbank): CURSORY.1");
-    run.write("unbank/review-cursory.md", "NO FINDINGS — the answer is carried out\n");
+    run.write("unbank/review.md", "NO FINDINGS — the answer is carried out\n");
     const lines = [
       ...oneRowLines(run, s1).map((l) => (l.startsWith("fix-1:") ? l.replace("1/1", "0/1") : l.startsWith("ship:") ? `ship: x | sha=${fix}` : l)),
       "banked: CURSORY.1 (awaiting operator)",
       `unbank: CURSORY.1 | from=${s1} | sha=${fix}`,
-      `unbank-read: review-cursory | sha=${fix}`,
+      `unbank-read: review | sha=${fix}`,
     ];
     run.ledger(lines);
     const f = await facts(run);
     assert.deepEqual(f.failures, []);
-    assert.deepEqual(f.readers.unbank?.map((r) => r.reader), ["review-cursory"]);
+    assert.deepEqual(f.readers.unbank?.map((r) => r.reader), ["review"]);
     const plan = planStage(await context(run, lines), "unbank");
     assert.deepEqual([plan.owed, plan.range, plan.move], [true, { from: s1, to: fix }, "unbank-read"]);
   });
@@ -301,7 +303,7 @@ test("CURSORY.5 / dry-run 2: a session commit before a round with no rows owes t
     const f = await facts(run);
     assert.ok(f.failures.includes("missing line: confirm-2:"), f.failures.join("\n"));
     assert.ok(!f.failures.some((l) => l.includes("with no read")), "the owed read, not a dead end, is the route");
-    assert.deepEqual(f.readers["confirm-2"]?.map((r) => r.reader), ["review-cursory-codex"]);
+    assert.deepEqual(f.readers["confirm-2"]?.map((r) => r.reader), ["review-codex"]);
 
     const plan = planStage(await context(run, lines), "confirm-2");
     assert.equal(plan.owed, true);
@@ -309,12 +311,12 @@ test("CURSORY.5 / dry-run 2: a session commit before a round with no rows owes t
     assert.equal(plan.why, `no fixer ran, and the PR's code changed after fix-1's sha ${s1.slice(0, 9)} (src/app.ts) — the read covers the session's commit`);
 
     // The session runs that read before round 3's table, and the claim again on the new head.
-    run.write("stage-confirm-2/review-cursory.md", stageFile([]));
+    run.write("stage-confirm-2/review.md", stageFile([]));
     run.handTest(2, `H1 · pass · ${s2} — hand-test-2/H1.out\n`);
     run.build(["3", "escalate", "final"], s2);
     run.ledger([
       ...lines.filter((l) => !l.startsWith("ship:")),
-      `confirm-2: review-cursory (codex failed: exit 1) | sha=${s2}`,
+      `confirm-2: review (codex failed: exit 1) | sha=${s2}`,
       `hand-test-2: 1/1 | sha=${s2}`,
       `ship: x | sha=${s2}`,
     ]);
@@ -329,14 +331,14 @@ function sessionAmendRun(run: Run): { s1: string; sa: string; s2: string } {
   run.build(["1"], run.wave);
   const s1 = run.commit({ "src/app.ts": "export const a = 3;\n" }, "fix(close): round 1 — 1 rows");
   run.write("fix-1.txt", `CURSORY.1 · fixed · ${s1} — a is 3\n${EXIT_CHECKS}\n`);
-  run.write("stage-confirm-1/review-cursory.md", stageFile(["- CURSORY.1 · resolved"], [blk("CURSORY.101", "behavior")]));
+  run.write("stage-confirm-1/review.md", stageFile(["- CURSORY.1 · resolved"], [blk("CURSORY.101", "behavior")]));
   run.handTest(1, `H1 · pass · ${s1} — hand-test-1/H1.out\n`);
   const sa = run.commit({ "src/app.ts": "export const a = 30;\n", [BRIEF_PATH]: briefText().replace("1. app answers", "1. app answers 30") }, "amend brief: a is 30");
   run.build(["2"], sa);
   const s2 = run.commit({ "src/app.ts": "export const a = 31;\n" }, "fix(close): round 2 — 1 rows");
   run.write("fix-2.txt", `CURSORY.101 · fixed · ${s2} — a is 31\n${EXIT_CHECKS}\n`);
-  run.write("stage-confirm-2/review-cursory.md", stageFile(["- CURSORY.101 · resolved"]));
-  run.write("stage-confirm-2/build-verifier.md", `${stageFile([])}VERDICT: CLEAN\n`);
+  run.write("stage-confirm-2/review.md", stageFile(["- CURSORY.101 · resolved"]));
+  run.write("stage-confirm-2/completeness.md", `${stageFile([])}VERDICT: CLEAN\n`);
   run.handTest(2, `H1 · pass · ${s2} — hand-test-2/H1.out\n`);
   run.build(["3", "escalate", "final"], s2);
   return { s1, sa, s2 };
@@ -347,10 +349,10 @@ function sessionAmendLines(run: Run, s: { s1: string; sa: string; s2: string }, 
     ...briefedHead("R1", run.wave),
     `verifier: CLEAN | sha=${s.s2}`,
     `fix-1: 1/1 | model=sonnet | agent=f1 | from=${run.wave} | sha=${s.s1}`,
-    `confirm-1: review-cursory (codex failed: exit 1) | sha=${s.s1}`,
+    `confirm-1: review (codex failed: exit 1) | sha=${s.s1}`,
     `hand-test-1: 1/1 | sha=${s.s1}`,
     `fix-2: 1/1 | model=sonnet | agent=f2 | from=${fix2From} | sha=${s.s2}`,
-    `confirm-2: review-cursory (codex failed: exit 1), build-verifier | sha=${s.s2}`,
+    `confirm-2: review (codex failed: exit 1), completeness | sha=${s.s2}`,
     `hand-test-2: 1/1 | sha=${s.s2}`,
     `ship: x | sha=${s.s2}`,
   ];
@@ -365,16 +367,16 @@ test("dry-run 2 + 3: a session amend before a fix round joins its confirm by fro
     assert.deepEqual(
       f.readers["confirm-2"]?.map((r) => [r.reader, r.why]),
       [
-        ["review-cursory-codex", "every read after a fix"],
-        ["build-verifier", "an `amend brief:` commit in the range changes the deliverables or assertions"],
+        ["review-codex", "every read after a fix"],
+        ["completeness", "an `amend brief:` commit in the range changes the deliverables or assertions"],
       ]
     );
 
     // The confirm that leaves the verifier out fails.
-    run.ledger(sessionAmendLines(run, s, s.s1).map((l) => (l.startsWith("confirm-2:") ? l.replace(", build-verifier", "") : l)));
+    run.ledger(sessionAmendLines(run, s, s.s1).map((l) => (l.startsWith("confirm-2:") ? l.replace(", completeness", "") : l)));
     assert.ok(
       (await facts(run)).failures.includes(
-        "confirm-2: names no build-verifier — owed (an `amend brief:` commit in the range changes the deliverables or assertions)"
+        "confirm-2: names no completeness — owed (an `amend brief:` commit in the range changes the deliverables or assertions)"
       )
     );
 
@@ -411,11 +413,11 @@ test("a fix line's from= may be the round's head or the prior read's end, nothin
 test("the verifier line is held to the verifier's last read, not its first", async () => {
   await withRun(async (run) => {
     const s = sessionAmendRun(run);
-    run.write("stage-confirm-2/build-verifier.md", `${stageFile([])}VERDICT: INCOMPLETE — the manifest exits 1\n`);
+    run.write("stage-confirm-2/completeness.md", `${stageFile([])}VERDICT: INCOMPLETE — the manifest exits 1\n`);
     run.build(["3", "escalate", "final"], s.s2);
     run.ledger(sessionAmendLines(run, s, s.s1));
     assert.deepEqual((await facts(run)).failures, [
-      "verifier: CLEAN — stage-confirm-2/build-verifier.md ends VERDICT: INCOMPLETE — the manifest exits 1; clear it by a hand-test claim (`CLEARED | by=hand-test-<n>:H<k>`) or re-run the check",
+      "verifier: CLEAN — stage-confirm-2/completeness.md ends VERDICT: INCOMPLETE — the manifest exits 1; clear it by a hand-test claim (`CLEARED | by=hand-test-<n>:H<k>`) or re-run the check",
     ]);
   });
 });
@@ -462,7 +464,7 @@ test("confirm-2 is owed on a drop with no code change, and not owed with neither
     let plan = planStage(await context(run, head), "confirm-2");
     assert.equal(plan.owed, true);
     assert.equal(plan.why, "1 row(s) dropped or re-labelled");
-    assert.deepEqual(plan.readers.filter((r) => r.verdict === "owed").map((r) => r.reader), ["review-cursory-codex"]);
+    assert.deepEqual(plan.readers.filter((r) => r.verdict === "owed").map((r) => r.reader), ["review-codex"]);
 
     run.write("fix-2.txt", `CURSORY.2 · fixed · ${s1} — already so\n${EXIT_CHECKS}\n`);
     plan = planStage(await context(run, head), "confirm-2");
@@ -497,21 +499,21 @@ test("the hunter sits out under 20 lines, is owed on an await, and R0 never owes
     ];
     const hunter = async (cls: string, sha: string, from?: string) =>
       planStage(await context(run, at(cls, sha, from)), "confirm-1").readers.find(
-        (r) => r.reader === "gate-silent-failure-hunter"
+        (r) => r.reader === "silent-failures"
       );
     assert.deepEqual(await hunter("R1", small), {
-      reader: "gate-silent-failure-hunter",
+      reader: "silent-failures",
       verdict: "sits out",
       why: "2 counted lines < 20, no catch/await/Promise",
     });
     const awaited = run.commit({ "src/app.ts": "export const a = await load();\n" }, "fix 1: await");
     assert.deepEqual(await hunter("R1", awaited, small), {
-      reader: "gate-silent-failure-hunter",
+      reader: "silent-failures",
       verdict: "owed",
       why: "a changed line holds `await`",
     });
     assert.deepEqual(await hunter("R0", awaited, small), {
-      reader: "gate-silent-failure-hunter",
+      reader: "silent-failures",
       verdict: "not owed",
       why: "R0's reader set has no hunter",
     });
@@ -523,7 +525,7 @@ test("the hunter sits out under 20 lines, is owed on an await, and R0 never owes
   });
 });
 
-test("at R2 with the fix trigger firing, security-review is owed at confirm-1 and confirm-2 only", async () => {
+test("at R2 with the fix trigger firing, security is owed at confirm-1 and confirm-2 only", async () => {
   await withRun(
     async (run) => {
       const shas = [2, 3, 4, 5].map((n) => run.commit({ "src/auth.ts": `export const token = ${n};\n` }, `fix ${n}: auth`));
@@ -542,18 +544,18 @@ test("at R2 with the fix trigger firing, security-review is owed at confirm-1 an
       const security = (stage: "confirm-1" | "confirm-2" | "last" | "escalate") => {
         const plan = planStage(ctx, stage);
         assert.equal(plan.owed, true, `${stage} is owed`);
-        return [plan.readers.find((r) => r.reader === "security-review")?.verdict, plan.fixSecurity?.fires ?? null];
+        return [plan.readers.find((r) => r.reader === "security")?.verdict, plan.fixSecurity?.fires ?? null];
       };
       assert.deepEqual(security("confirm-1"), ["owed", true]);
       assert.deepEqual(security("confirm-2"), ["owed", true]);
       assert.deepEqual(security("last"), ["not owed", null]);
       assert.deepEqual(security("escalate"), ["not owed", null]);
 
-      run.write("stage-last/review-cursory-codex.md", stageFile([]));
-      run.write("stage-last/security-review.md", stageFile([]));
-      run.ledger([...lines, `last-read: review-cursory-codex, security-review | sha=${s3}`]);
+      run.write("stage-last/review-codex.md", stageFile([]));
+      run.write("stage-last/security.md", stageFile([]));
+      run.ledger([...lines, `last-read: review-codex, security | sha=${s3}`]);
       const f = await facts(run);
-      assert.ok(f.failures.includes("last-read: names security-review — it reads a fix at confirm-1 and confirm-2 only"), f.failures.join("\n"));
+      assert.ok(f.failures.includes("last-read: names security — it reads a fix at confirm-1 and confirm-2 only"), f.failures.join("\n"));
     },
     { brief: briefText({ cls: "R2" }) }
   );
@@ -565,19 +567,19 @@ test("security is owed at R2 on a fire, not at R2 when quiet, and not asked at R
     const at = (cls: string) => [...briefedHead(cls, run.wave), `fix-1: 1/1 | model=sonnet | agent=f1 | from=${run.wave} | sha=${auth}`];
     let plan = planStage(await context(run, at("R2")), "confirm-1");
     assert.deepEqual(plan.fixSecurity?.reasons, ["path src/auth.ts"]);
-    assert.deepEqual(plan.readers.find((r) => r.reader === "security-review"), {
-      reader: "security-review",
+    assert.deepEqual(plan.readers.find((r) => r.reader === "security"), {
+      reader: "security",
       verdict: "owed",
       why: "R2; fix-security fires",
     });
     plan = planStage(await context(run, at("R1")), "confirm-1");
     assert.equal(plan.fixSecurity, null);
-    assert.equal(plan.readers.find((r) => r.reader === "security-review")?.verdict, "not owed");
+    assert.equal(plan.readers.find((r) => r.reader === "security")?.verdict, "not owed");
 
     const quiet = run.commit({ "src/app.ts": "export const a = 9;\n" }, "fix 1: app");
     const r2Quiet = [...briefedHead("R2", run.wave), `fix-1: 1/1 | model=sonnet | agent=f1 | from=${auth} | sha=${quiet}`];
     plan = planStage(await context(run, r2Quiet), "confirm-1");
-    assert.equal(plan.readers.find((r) => r.reader === "security-review")?.why, "R2; fix-security quiet");
+    assert.equal(plan.readers.find((r) => r.reader === "security")?.why, "R2; fix-security quiet");
   });
 });
 
@@ -585,16 +587,16 @@ test("the verifier is owed at confirm-1 on an amend brief: commit or a rename", 
   await withRun(async (run) => {
     const amend = run.commit({ [BRIEF_PATH]: briefText().replace("1. app answers", "1. app answers in src/app.ts") }, "amend brief: name the file");
     const at = [...briefedHead("R1", run.wave), `fix-1: 1/1 | model=sonnet | agent=f1 | from=${run.wave} | sha=${amend}`];
-    const v = planStage(await context(run, at), "confirm-1").readers.find((r) => r.reader === "build-verifier");
-    assert.deepEqual(v, { reader: "build-verifier", verdict: "owed", why: "an `amend brief:` commit changes the deliverables or assertions" });
+    const v = planStage(await context(run, at), "confirm-1").readers.find((r) => r.reader === "completeness");
+    assert.deepEqual(v, { reader: "completeness", verdict: "owed", why: "an `amend brief:` commit changes the deliverables or assertions" });
     run.git("mv", "src/auth.ts", "src/auth2.ts");
     run.git("commit", "-q", "-m", "rename");
     const renamed = run.head();
     const at2 = [...briefedHead("R1", run.wave), `fix-1: 1/1 | model=sonnet | agent=f1 | from=${amend} | sha=${renamed}`];
-    const v2 = planStage(await context(run, at2), "confirm-1").readers.find((r) => r.reader === "build-verifier");
+    const v2 = planStage(await context(run, at2), "confirm-1").readers.find((r) => r.reader === "completeness");
     assert.equal(v2?.why, "a renamed path");
     const at3 = [...briefedHead("R1", run.wave), `fix-1: 1/1 | model=sonnet | agent=f1 | from=${run.wave} | sha=${run.wave}`];
-    const v3 = planStage(await context(run, at3), "confirm-1").readers.find((r) => r.reader === "build-verifier");
+    const v3 = planStage(await context(run, at3), "confirm-1").readers.find((r) => r.reader === "completeness");
     assert.equal(v3?.verdict, "not owed");
     assert.equal(v3?.instead, "run <manifest> --brief-file <brief> --no-exercise yourself", "TEXT-CURSORY.10");
   });
@@ -622,7 +624,7 @@ test("an `amend brief:` of a non-graded yaml key owes no verifier; a files_absen
     async (run) => {
       const verifierOver = async (from: string, to: string) => {
         const lines = [...briefedHead("R1", run.wave), `fix-1: 1/1 | model=sonnet | agent=f1 | from=${from} | sha=${to}`];
-        return planStage(await context(run, lines), "confirm-1").readers.find((r) => r.reader === "build-verifier");
+        return planStage(await context(run, lines), "confirm-1").readers.find((r) => r.reader === "completeness");
       };
       const other = brief
         .replace("description: app answers", "description: app answers, reworded")
@@ -630,7 +632,7 @@ test("an `amend brief:` of a non-graded yaml key owes no verifier; a files_absen
         .replace("files_absent:", "\n# gone after the fix\nfiles_absent:");
       const desc = run.commit({ [BRIEF_PATH]: other }, "amend brief: reword the description");
       assert.deepEqual(await verifierOver(run.wave, desc), {
-        reader: "build-verifier",
+        reader: "completeness",
         verdict: "not owed",
         why: "the `amend brief:` commit changes no deliverable or assertion, no rename",
         instead: "run <manifest> --brief-file <brief> --no-exercise yourself",
@@ -657,21 +659,21 @@ test("an `amend brief:` owes the verifier only when it changes a deliverable or 
         const move = stage === "confirm-1" ? "fix-1" : "fix-3";
         run.write("fix-3.txt", `CURSORY.3 · fixed · ${to} — done\n${EXIT_CHECKS}\n`);
         const lines = [...briefedHead("R1", run.wave), `${move}: 1/1 | model=sonnet | agent=f1 | from=${from} | sha=${to}`];
-        return planStage(await context(run, lines), stage).readers.find((r) => r.reader === "build-verifier");
+        return planStage(await context(run, lines), stage).readers.find((r) => r.reader === "completeness");
       };
       const hand = run.commit(
         { [BRIEF_PATH]: brief.replace("pass: exit 0", "pass: exit 0 and prints ok").replace("- src/app.ts", "- src/app.ts\n- src/auth.ts") },
         "amend brief: H1 says what it prints; auth.ts is a target"
       );
       assert.deepEqual(await verifierOver(run.wave, hand), {
-        reader: "build-verifier",
+        reader: "completeness",
         verdict: "not owed",
         why: "the `amend brief:` commit changes no deliverable or assertion, no rename",
         instead: "run <manifest> --brief-file <brief> --no-exercise yourself",
       });
       const code = run.commit({ "src/app.ts": "export const a = 5;\n" }, "fix: a is 5");
       assert.deepEqual(await verifierOver(run.wave, code, "last"), {
-        reader: "build-verifier",
+        reader: "completeness",
         verdict: "not owed",
         why: "the `amend brief:` commit in the range changes no deliverable or assertion",
         instead: "run <manifest> --brief-file <brief> --no-exercise yourself",
@@ -838,7 +840,7 @@ test("store: a --from-branch hand-test file is recorded by a commit on the branc
         `hand-test-block: store:${block}`,
         "steps: .claude/build-steps.toml",
         `freshen: merged | base=main | sha=${run.wave}`,
-        `wave: review-cursory | sha=${run.wave}`,
+        `wave: review | sha=${run.wave}`,
         "verifier: N/A (from-branch, no brief)",
       ];
       assert.deepEqual((await context(run, lines)).briefFailures, [
@@ -880,7 +882,7 @@ test("store: an amendment owes the verifier at the read whose commit times hold 
         const move = stage === "confirm-1" ? "fix-1" : "fix-3";
         run.write("fix-3.txt", `CURSORY.3 · fixed · ${to} — done\n${EXIT_CHECKS}\n`);
         const lines = [...briefedHead("R1", run.wave, "sonnet", STORE_BRIEF), `${move}: 1/1 | model=sonnet | agent=f1 | from=${from} | sha=${to}`];
-        return planStage(await context(run, lines), stage).readers.find((r) => r.reader === "build-verifier");
+        return planStage(await context(run, lines), stage).readers.find((r) => r.reader === "completeness");
       };
       const s1 = run.commit({ "src/app.ts": "export const a = 3;\n" }, "fix: a is 3");
       assert.equal((await verifierOver(run.wave, s1, "confirm-1"))?.why, "no amend brief:, no rename");
@@ -888,7 +890,7 @@ test("store: an amendment owes the verifier at the read whose commit times hold 
       // Graded, after the last code commit: the read ending at HEAD holds it.
       store.commit({ [STORE_BRIEF_PATH]: brief.replace("name: app answers", "name: app answers twice") }, "amend brief: the deliverable says twice");
       assert.deepEqual(await verifierOver(run.wave, s1, "confirm-1"), {
-        reader: "build-verifier",
+        reader: "completeness",
         verdict: "owed",
         why: "an `amend brief:` commit changes the deliverables or assertions",
       });
@@ -904,7 +906,7 @@ test("store: an amendment owes the verifier at the read whose commit times hold 
       );
       const s3 = run.commit({ "src/app.ts": "export const a = 5;\n" }, "fix: a is 5");
       assert.deepEqual(await verifierOver(s2, s3, "last"), {
-        reader: "build-verifier",
+        reader: "completeness",
         verdict: "not owed",
         why: "the `amend brief:` commit in the range changes no deliverable or assertion",
         instead: "run <manifest> --brief-file <brief> --no-exercise yourself",
@@ -1091,14 +1093,14 @@ test("--from-branch owes opus at R2 and sonnet below; a sonnet fixer at R2 fails
   const block = "docs/briefs/quick-x-hand-test.md";
   await withRun(
     async (run) => {
-      run.write("review-cursory.md", blk("CURSORY.1", "behavior"));
-      run.write("gate-silent-failure-hunter.md", "NO FINDINGS\n");
-      run.write("security-review.md", "NO FINDINGS\n");
+      run.write("review.md", blk("CURSORY.1", "behavior"));
+      run.write("silent-failures.md", "NO FINDINGS\n");
+      run.write("security.md", "NO FINDINGS\n");
       run.build(["1"], run.wave);
       const s1 = run.commit({ "src/app.ts": "export const a = 3;\n" }, "fix 1");
       run.write("fix-1.txt", `CURSORY.1 · fixed · ${s1} — a is 3\n${EXIT_CHECKS}\n`);
-      run.write("stage-confirm-1/review-cursory-codex.md", stageFile(["- CURSORY.1 · resolved"]));
-      run.write("stage-confirm-1/security-review.md", stageFile([]));
+      run.write("stage-confirm-1/review-codex.md", stageFile(["- CURSORY.1 · resolved"]));
+      run.write("stage-confirm-1/security.md", stageFile([]));
       run.build(["2", "3", "escalate", "final"], s1);
       run.ledger([
         "class: R2 — operator, 2026-09-28",
@@ -1107,10 +1109,10 @@ test("--from-branch owes opus at R2 and sonnet below; a sonnet fixer at R2 fails
         `hand-test-block: ${block}`,
         "steps: .claude/build-steps.toml",
         `freshen: merged | base=main | sha=${run.wave}`,
-        `wave: review-cursory, gate-silent-failure-hunter, security-review | sha=${run.wave}`,
+        `wave: review, silent-failures, security | sha=${run.wave}`,
         "verifier: N/A (from-branch, no brief)",
         `fix-1: 1/1 | model=sonnet | agent=f1 | from=${run.wave} | sha=${s1}`,
-        `confirm-1: review-cursory-codex, security-review | sha=${s1}`,
+        `confirm-1: review-codex, security | sha=${s1}`,
         "hand-test-1: skipped — no claims",
         `ship: x | sha=${s1}`,
       ]);
@@ -1138,7 +1140,7 @@ test("rounds: a fix line whose counts or from disagree with the table fails; a r
   await withRun(async (run) => {
     const s1 = run.commit({ "src/app.ts": "export const a = 3;\n" }, "fix 1");
     const r1 = round(run.wave, [row("CURSORY.1", "behavior"), row("CURSORY.2", "text", "src/auth.ts")]);
-    run.table({ "1": r1, "2": { ...round(s1), refused: [{ file: "stage-confirm-1/review-cursory-codex.md", error: "line 3: bad" }] }, "3": round(s1), escalate: round(s1), final: finalRound(s1) });
+    run.table({ "1": r1, "2": { ...round(s1), refused: [{ file: "stage-confirm-1/review-codex.md", error: "line 3: bad" }] }, "3": round(s1), escalate: round(s1), final: finalRound(s1) });
     run.write("fix-1.txt", `CURSORY.1 · fixed · ${s1} — a is 3\nCURSORY.2 · dropped — not so\n${EXIT_CHECKS}\n`);
     run.ledger([...briefedHead("R1", run.wave), `fix-1: 2/3 | model=opus | agent=f1 | from=${s1} | sha=${s1}`]);
     const f = await facts(run);
@@ -1150,7 +1152,7 @@ test("rounds: a fix line whose counts or from disagree with the table fails; a r
     ]) {
       assert.ok(f.failures.includes(want), `${want}\n--- got:\n${f.failures.join("\n")}`);
     }
-    assert.ok(f.failures.some((l) => l.startsWith("table.json round 2 refused stage-confirm-1/review-cursory-codex.md")));
+    assert.ok(f.failures.some((l) => l.startsWith("table.json round 2 refused stage-confirm-1/review-codex.md")));
   });
 });
 
@@ -1175,21 +1177,21 @@ test("main's drift after the wave owes a drift read; the drift plan reads main's
     assert.equal(plan.owed, true);
     assert.deepEqual(plan.range, { from: pre, to: merged, files: ["src/app.ts", "src/auth.ts"] });
     assert.equal(plan.fixSecurity, null, "the drift read asks no fix trigger, though main's side changed auth");
-    assert.deepEqual(plan.readers.map((r) => [r.reader, r.verdict]), [["review-cursory", "owed"], ["security-review", "not owed"]]);
+    assert.deepEqual(plan.readers.map((r) => [r.reader, r.verdict]), [["review", "owed"], ["security", "not owed"]]);
 
     // The drift read recorded: no failure for the drift itself, and main moving again is caught.
     const withRead = [
       ...briefedHead("R2", run.wave),
       `verifier: CLEAN | sha=${run.wave}`,
       `hand-test-1: 1/1 | sha=${run.wave}`,
-      `drift-read: review-cursory | from=${pre} | files=2 | sha=${merged}`,
+      `drift-read: review | from=${pre} | files=2 | sha=${merged}`,
     ];
-    run.write("stage-drift-1/review-cursory.md", stageFile([]));
+    run.write("stage-drift-1/review.md", stageFile([]));
     run.ledger([...withRead, `ship: x | sha=${merged}`]);
     const read = await facts(run);
     assert.ok(!read.failures.some((l) => /^(?:origin\/main|main) advanced|^drift-read/.test(l)), read.failures.join("\n"));
     assert.ok(read.failures.includes("table.json has no round `drift-1` — run `reviewTable.ts build --run-dir <d> --round drift-1`"), read.failures.join("\n"));
-    assert.deepEqual(read.readers["drift-1"]?.map((r) => r.reader), ["review-cursory"]);
+    assert.deepEqual(read.readers["drift-1"]?.map((r) => r.reader), ["review"]);
     run.git("checkout", "-q", "main");
     run.commit({ "src/auth.ts": auth(1, 3) }, "main moves again");
     run.git("checkout", "-q", "quick/x");
@@ -1220,8 +1222,8 @@ test("the hunter counts only non-test lines: a fixer's async test alone does not
     );
     const ctx = await context(run, [...briefedHead("R1", run.wave), `fix-1: 1/1 | model=sonnet | agent=f1 | from=${run.wave} | sha=${s}`]);
     assert.deepEqual(
-      planStage(ctx, "confirm-1").readers.find((r) => r.reader === "gate-silent-failure-hunter"),
-      { reader: "gate-silent-failure-hunter", verdict: "sits out", why: "2 counted lines < 20, no catch/await/Promise" }
+      planStage(ctx, "confirm-1").readers.find((r) => r.reader === "silent-failures"),
+      { reader: "silent-failures", verdict: "sits out", why: "2 counted lines < 20, no catch/await/Promise" }
     );
   });
 });
@@ -1244,19 +1246,19 @@ function oneDriftGroup(run: Run) {
   run.build(ALL_ROUNDS, run.wave);
   const pre1 = run.commit({ "src/auth.ts": auth(5, 1) }, "the branch edits auth line 1");
   const merge1 = mainMoves(2);
-  run.write("stage-drift-1/review-cursory.md", stageFile([], [blk("CURSORY.501", "behavior")]));
+  run.write("stage-drift-1/review.md", stageFile([], [blk("CURSORY.501", "behavior")]));
   run.build(["drift-1"], merge1);
   const fix1 = run.commit({ "src/app.ts": "export const a = 6;\n" }, "fix(close): drift round — 1 rows");
   run.write("fix-drift-1.txt", `CURSORY.501 · fixed · ${fix1} — a is 6\n${EXIT_CHECKS}\n`);
-  run.write("stage-drift-confirm-1/review-cursory-codex.md", stageFile(["- CURSORY.501 · resolved"]));
+  run.write("stage-drift-confirm-1/review-codex.md", stageFile(["- CURSORY.501 · resolved"]));
   const merge2 = mainChanges({ "src/app.ts": "export const a = 100;\n" }, "main moves: a is 100");
   const head = run.head();
   run.handTest(1, `H1 · pass · ${head} — hand-test-1/H1.out\n`);
   run.build(["final"], merge2);
   const group1 = [
-    `drift-read: review-cursory | from=${pre1} | files=1 | sha=${merge1}`,
+    `drift-read: review | from=${pre1} | files=1 | sha=${merge1}`,
     `drift-fix: 1/1 | model=sonnet | agent=d1 | from=${merge1} | sha=${fix1}`,
-    `drift-confirm: review-cursory-codex | sha=${fix1}`,
+    `drift-confirm: review-codex | sha=${fix1}`,
   ];
   const lines = (merges: [string, string][]) => [
     ...briefedHead("R1", run.wave),
@@ -1274,8 +1276,8 @@ test("one drift group, then a `drift-merge:` for main's next move, passes; the g
     run.ledger([...lines([[fix1, merge2]]), `ship: x | sha=${run.head()}`]);
     const f = await facts(run);
     assert.deepEqual(f.failures, []);
-    assert.deepEqual(f.readers["drift-1"]?.map((r) => r.reader), ["review-cursory"]);
-    assert.deepEqual(f.readers["drift-confirm-1"]?.map((r) => r.reader), ["review-cursory-codex"]);
+    assert.deepEqual(f.readers["drift-1"]?.map((r) => r.reader), ["review"]);
+    assert.deepEqual(f.readers["drift-confirm-1"]?.map((r) => r.reader), ["review-codex"]);
     assert.equal(f.readers["drift-2"], undefined);
     const plan = planStage(await context(run, lines([[fix1, merge2]])), "drift");
     assert.equal(plan.key, "drift-1");
@@ -1346,7 +1348,7 @@ test("CURSORY.4: the drift group is judged — its missing confirm and fix lines
 test("CURSORY.4: final carries the drift round — its open row stays open", async () => {
   await withRun(async (run) => {
     const { fix1, merge2, lines } = oneDriftGroup(run);
-    run.write("stage-drift-confirm-1/review-cursory-codex.md", stageFile(["- CURSORY.501 · open — a is still 5 on one path"]));
+    run.write("stage-drift-confirm-1/review-codex.md", stageFile(["- CURSORY.501 · open — a is still 5 on one path"]));
     run.build(["final"], run.head());
     run.ledger([...lines([[fix1, merge2]]), `ship: x | sha=${run.head()}`]);
     const f = await facts(run);
@@ -1404,9 +1406,119 @@ test("an arm that could not run here throws; an old arm's exit 2 falls back with
       const ctx = await context(run, [...briefedHead("R2", run.wave), `fix-1: 1/1 | model=sonnet | agent=f1 | from=${run.wave} | sha=${s1}`]);
       const plan = planStage(ctx, "confirm-1");
       assert.equal(plan.fixSecurity?.source, "fallback");
-      assert.equal(plan.readers.find((r) => r.reader === "security-review")?.verdict, "owed");
+      assert.equal(plan.readers.find((r) => r.reader === "security")?.verdict, "owed");
       assert.ok([...ctx.notes].some((n) => /exited 2: riskClass: unknown flag/.test(n)), [...ctx.notes].join("\n"));
     },
     { arm: old }
   );
+});
+
+// ── An unbank after a drift group ─────────────────────────
+
+/** A run banked at its escalate head (`esc`, the wave: no PR code after it unless `early`, which
+ *  commits PR code before the drift merge), then main moved and a drift group ran: the drift read
+ *  merged main (`merge1`), and, with `fix`, a fix (`fix1`) that `confirm` reads. `unbankLines(from)`
+ *  is the ledger up to the unbank, whose fix lands at HEAD now. */
+function bankedThenDrift(run: Run, opts: { fix: boolean; confirm: boolean; early?: boolean }) {
+  waveFiles(run);
+  run.build(ALL_ROUNDS, run.wave);
+  const esc = run.wave;
+  run.git("checkout", "-q", "main");
+  run.commit({ "src/auth.ts": "export const token = 1;\n" }, "main moves under auth");
+  run.git("checkout", "-q", "quick/x");
+  if (opts.early === true) run.commit({ "src/early.ts": "export const e = 1;\n" }, "fix a red check before the drift merge");
+  run.git("merge", "-q", "--no-edit", "-X", "ours", "main");
+  const merge1 = run.head();
+  run.write("stage-drift-1/review.md", stageFile([], opts.fix ? [blk("CURSORY.501", "behavior")] : []));
+  run.build(["drift-1"], merge1);
+  let fix1 = merge1;
+  if (opts.fix) {
+    fix1 = run.commit({ "src/app.ts": "export const a = 6;\n" }, "fix(close): drift round — 1 rows");
+    run.write("fix-drift-1.txt", `CURSORY.501 · fixed · ${fix1} — a is 6\n${EXIT_CHECKS}\n`);
+    run.write("stage-drift-confirm-1/review-codex.md", stageFile(["- CURSORY.501 · resolved"]));
+  }
+  const group = [
+    `drift-read: review | from=${esc} | files=1 | sha=${merge1}`,
+    ...(opts.fix ? [`drift-fix: 1/1 | model=sonnet | agent=d1 | from=${merge1} | sha=${fix1}`] : []),
+    ...(opts.fix && opts.confirm ? [`drift-confirm: review-codex | sha=${fix1}`] : []),
+  ];
+  const unbankLines = (from: string) => {
+    const fix = run.commit({ "src/app.ts": "export const a = 99;\n" }, "fix(unbank): CURSORY.1");
+    run.write("unbank/review.md", "NO FINDINGS — the answer is carried out\n");
+    return [
+      ...briefedHead("R1", run.wave),
+      `verifier: CLEAN | sha=${run.wave}`,
+      ...group,
+      "banked: CURSORY.1 (awaiting operator)",
+      `unbank: CURSORY.1 | from=${from} | sha=${fix} | model=sonnet | agent=u1`,
+      `unbank-read: review | sha=${fix}`,
+    ];
+  };
+  return { esc, merge1, fix1, unbankLines };
+}
+
+const fromFailures = async (run: Run) => (await facts(run)).failures.filter((l) => l.startsWith("unbank: from="));
+
+test("unbank after a drift group: from= at the confirm passes, the confirm having read the drift fix", async () => {
+  await withRun(async (run) => {
+    const { fix1, unbankLines } = bankedThenDrift(run, { fix: true, confirm: true });
+    run.ledger(unbankLines(fix1));
+    assert.deepEqual(await fromFailures(run), []);
+  });
+});
+
+test("unbank after a drift group with no fix: from= at the drift read passes", async () => {
+  await withRun(async (run) => {
+    const { merge1, unbankLines } = bankedThenDrift(run, { fix: false, confirm: false });
+    run.ledger(unbankLines(merge1));
+    assert.deepEqual(await fromFailures(run), []);
+  });
+});
+
+test("unbank after a drift group: a later main merge with no PR code after the confirm passes as from=", async () => {
+  await withRun(async (run) => {
+    const { unbankLines } = bankedThenDrift(run, { fix: true, confirm: true });
+    run.git("checkout", "-q", "main");
+    run.commit({ "src/other.ts": "export const o = 1;\n" }, "main moves again");
+    run.git("checkout", "-q", "quick/x");
+    run.git("merge", "-q", "--no-edit", "-X", "ours", "main");
+    run.ledger(unbankLines(run.head()));
+    assert.deepEqual(await fromFailures(run), []);
+  });
+});
+
+test("unbank after a drift group: PR code after the confirm still fails from=, naming that code", async () => {
+  await withRun(async (run) => {
+    const { esc, unbankLines } = bankedThenDrift(run, { fix: true, confirm: true });
+    const late = run.commit({ "src/app.ts": "export const a = 7;\n" }, "fix a red check after the confirm");
+    run.ledger(unbankLines(late));
+    const [only, ...rest] = await fromFailures(run);
+    assert.deepEqual(rest, []);
+    assert.ok(
+      only?.startsWith(`unbank: from=${late} — the run banked at the escalate round's end ${esc}, and the PR's code changed after it with no read (`) && only.includes("src/app.ts"),
+      only
+    );
+  });
+});
+
+test("unbank after a drift group: PR code between the escalate end and the drift merge fails from= at the confirm, naming that code", async () => {
+  await withRun(async (run) => {
+    const { esc, fix1, unbankLines } = bankedThenDrift(run, { fix: true, confirm: true, early: true });
+    run.ledger(unbankLines(fix1));
+    const [only, ...rest] = await fromFailures(run);
+    assert.deepEqual(rest, []);
+    assert.equal(only, `unbank: from=${fix1} — the run banked at the escalate round's end ${esc}, and the PR's code changed after it with no read (src/early.ts); from= is the head the run banked at`);
+  });
+});
+
+test("unbank after a drift group: a drift fix with no confirm is not read, so from= at the fix fails", async () => {
+  await withRun(async (run) => {
+    const { esc, fix1, unbankLines } = bankedThenDrift(run, { fix: true, confirm: false });
+    run.ledger(unbankLines(fix1));
+    const f = await facts(run);
+    const from = f.failures.filter((l) => l.startsWith("unbank: from="));
+    assert.equal(from.length, 1, f.failures.join("\n"));
+    assert.ok(from[0]!.startsWith(`unbank: from=${fix1} — the run banked at the escalate round's end ${esc}, and the PR's code changed after it with no read (`), from[0]);
+    assert.ok(f.failures.some((l) => l.startsWith("missing line: drift-confirm:")), f.failures.join("\n"));
+  });
 });

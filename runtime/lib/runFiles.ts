@@ -1,8 +1,9 @@
 /**
  * The run dir's file grammars, one owner for each: the finding block and its locator, `session.md`,
- * the stage file (`stage-<stage>/<reader>.md`), the fix file (`fix-<round>.txt`), the hand-test file
- * (`hand-test-<n>.txt`), and `table.json`. The ledger lives in `./ledger.ts`; which files in a run
- * dir are reader files lives in `./runDir.ts`. Pure: callers pass text, nothing here reads a file.
+ * the stage file (`stage-<stage>/<reader>.md`), the hand-test file (`hand-test-<n>.txt`), and
+ * `table.json`. The fix file (`fix-<round>.txt`) lives in `./fixFile.ts`, the ledger in
+ * `./ledger.ts`; which files in a run dir are reader files lives in `./runDir.ts`. Pure: callers pass
+ * text, nothing here reads a file.
  *
  * Every parser throws a `RunFileError` holding every problem it found, each with its line, so the
  * table script's `check` can print them all and a reader can fix its file in one pass.
@@ -27,7 +28,7 @@ function formatIssue(i: RunFileIssue): string {
   return i.line === undefined ? i.message : `line ${i.line}: ${i.message}`;
 }
 
-function throwIfAny(issues: RunFileIssue[]): void {
+export function throwIfAny(issues: RunFileIssue[]): void {
   if (issues.length > 0) throw new RunFileError(issues);
 }
 
@@ -110,15 +111,16 @@ export function roundOrder(a: RoundId, b: RoundId): number {
   return rank(a) - rank(b);
 }
 
-const URGENT: readonly Kind[] = ["behavior", "security", "missing"];
+/** The kinds every fix round fixes, and the ones a finished run must not leave open. */
+export const URGENT_KINDS: readonly Kind[] = ["behavior", "security", "missing"];
 
 /** The kinds each fix round fixes; every other kind goes to the leftovers at that round. */
 export const STAGES_FIXING: Readonly<Record<FixRoundName, readonly Kind[]>> = {
   "1": KINDS,
-  "2": [...URGENT, "structure", "test-app"],
-  "3": URGENT,
-  escalate: URGENT,
-  drift: URGENT,
+  "2": [...URGENT_KINDS, "structure", "test-app"],
+  "3": URGENT_KINDS,
+  escalate: URGENT_KINDS,
+  drift: URGENT_KINDS,
 };
 
 export function isFixedAt(kind: Kind, round: FixRound): boolean {
@@ -181,7 +183,8 @@ export function parseStageKey(key: string): StageKey | null {
 
 // ── Finding ids ──────────────────────────────────────────────────────────────────────────────
 
-const ID_SRC = "[A-Z][A-Z0-9-]*\\.\\d+";
+export const ID_SRC = "[A-Z][A-Z0-9-]*\\.\\d+";
+export const DASH = "\\s+[—–]\\s+";
 const ID_RE = new RegExp(`^${ID_SRC}$`);
 
 /** `CURSORY-2.3` → prefix `CURSORY-2`, reader prefix `CURSORY`, slice 2, number 3. Slice `k` of a
@@ -210,11 +213,11 @@ export function isFindingId(value: string): boolean {
  *  so a reader writing another prefix never re-reads its own rows. A repo reader's prefix is its own
  *  and is never given rows at a stage (repo readers read the wave only). */
 export const READER_ID_PREFIX: Readonly<Record<string, string>> = {
-  "review-cursory": "CURSORY",
-  "review-cursory-codex": "CODEX",
-  "gate-silent-failure-hunter": "HUNTER",
-  "security-review": "SEC",
-  "build-verifier": "VERIFIER",
+  review: "CURSORY",
+  "review-codex": "CODEX",
+  "silent-failures": "HUNTER",
+  security: "SEC",
+  completeness: "VERIFIER",
   simplifier: "SIMP",
 };
 
@@ -236,6 +239,9 @@ export interface Locator {
   end: number;
   parsed: boolean;
 }
+
+/** A locator's path as two locators compare it: without a leading `./`. */
+export const cleanPath = (p: string): string => p.replace(/^\.\//, "");
 
 const PATH_CHARS = "[\\w@.~+$/\\[\\]-]";
 const LINE_LOC_RE = new RegExp(`(${PATH_CHARS}*):(\\d+)(?:\\s*[-–]\\s*(\\d+))?`, "g");
@@ -319,7 +325,7 @@ const BLOCK_HEAD_RE = new RegExp(`^#{2,4} (${ID_SRC}) — (.+)$`);
 const LOOSE_HEAD_RE = new RegExp(`^#{2,4}\\s+(${ID_SRC})\\b`);
 const LOOSE_HEAD_SEP_RE = new RegExp(`^#{2,4}\\s+(${ID_SRC})\\s+[—–-]+\\s+(.+)$`);
 const FIELD_RE = /^- ([A-Za-z][A-Za-z_-]*):\s*(.*)$/;
-const CONTINUATION_RE = /^ {2,}\S/;
+export const CONTINUATION_RE = /^ {2,}\S/;
 
 interface RawBlock {
   id: string;
@@ -536,170 +542,6 @@ export function parseSessionFile(text: string): SessionFinding[] {
   return out;
 }
 
-// ── The fix file ─────────────────────────────────────────────────────────────────────────────
-
-export const DECISION_WHICH = [
-  "brief",
-  "public-surface",
-  "design-entry",
-  "persisted-shape",
-  "user-visible",
-  "conflict",
-  "product",
-] as const;
-export type DecisionWhich = (typeof DECISION_WHICH)[number];
-
-export type FixLine =
-  | { row: string; line: number; action: "fixed"; sha: string; kind?: Kind; what: string }
-  | { row: string; line: number; action: "dropped"; reason: string }
-  | { row: string; line: number; action: "relabel"; from: Kind; to: Kind; reason: string }
-  | { row: string; line: number; action: "decision"; which: DecisionWhich; question: string }
-  | { row: string; line: number; action: "blocked"; reason: string };
-
-export const EXIT_CHECKS = ["vacuity", "mutation", "branches", "shared function"] as const;
-export type ExitCheck = (typeof EXIT_CHECKS)[number];
-
-export interface FixFile {
-  lines: FixLine[];
-  exitChecks: Record<ExitCheck, string>;
-}
-
-export interface ParseFixOptions {
-  /** The rows of `table-<round>.md`: each needs one line, and no other row may appear. */
-  rows?: readonly string[];
-  /** The round: a `relabel` to a kind this round fixes is refused (that is `fixed · kind=`). */
-  round?: FixRound;
-}
-
-const DASH = "\\s+[—–]\\s+";
-const FIX_ROW_RE = new RegExp(`^(${ID_SRC})\\s+·\\s+(.*)$`);
-const FIXED_RE = new RegExp(`^fixed\\s+·\\s+([0-9a-f]{7,40})(?:\\s+·\\s+kind=(\\S+))?${DASH}(.+)$`);
-const FIXED_NO_SHA_RE = /^fixed\b/;
-const DROPPED_RE = new RegExp(`^dropped${DASH}(.+)$`);
-const RELABEL_RE = new RegExp(`^relabel\\s+(\\S+?)\\s*(?:→|->)\\s*(\\S+)${DASH}(.+)$`);
-const DECISION_RE = new RegExp(`^decision${DASH}(\\S+)${DASH}(.+)$`);
-const BLOCKED_RE = new RegExp(`^blocked${DASH}(.+)$`);
-const EXIT_HEAD_RE = /^exit checks:\s*$/;
-const EXIT_LINE_RE = /^(vacuity|mutation|branches|shared function):\s*(.*)$/;
-
-function fixLine(
-  row: string,
-  rest: string,
-  line: number,
-  opts: ParseFixOptions,
-  issues: RunFileIssue[]
-): FixLine | null {
-  const bad = (message: string): null => {
-    issues.push({ line, message: `${row}: ${message}` });
-    return null;
-  };
-  let m = FIXED_RE.exec(rest);
-  if (m) {
-    if (m[2] === undefined) return { row, line, action: "fixed", sha: m[1]!, what: m[3]!.trim() };
-    const k = normaliseKind(m[2]);
-    if (!k.kind) return bad(`\`kind=${m[2]}\` is not one of ${KINDS.join(" | ")}`);
-    return { row, line, action: "fixed", sha: m[1]!, kind: k.kind, what: m[3]!.trim() };
-  }
-  if (FIXED_NO_SHA_RE.test(rest)) {
-    return bad("a `fixed` line is `<ROW> · fixed · <sha> [· kind=<kind>] — <what changed>`; the sha is missing or malformed");
-  }
-  m = DROPPED_RE.exec(rest);
-  if (m) return { row, line, action: "dropped", reason: m[1]!.trim() };
-  m = RELABEL_RE.exec(rest);
-  if (m) {
-    const from = normaliseKind(m[1]!);
-    const to = normaliseKind(m[2]!);
-    if (!from.kind || !to.kind) {
-      return bad(`relabel kinds must be ${KINDS.join(" | ")}, got \`${m[1]}→${m[2]}\``);
-    }
-    if (opts.round && isFixedAt(to.kind, opts.round)) {
-      return bad(`round ${opts.round} fixes \`${to.kind}\`; fix the row and write \`fixed · <sha> · kind=${to.kind}\``);
-    }
-    return { row, line, action: "relabel", from: from.kind, to: to.kind, reason: m[3]!.trim() };
-  }
-  m = DECISION_RE.exec(rest);
-  if (m) {
-    const which = m[1]!;
-    if (!(DECISION_WHICH as readonly string[]).includes(which)) {
-      return bad(`decision \`${which}\` is not one of ${DECISION_WHICH.join(" | ")}`);
-    }
-    return { row, line, action: "decision", which: which as DecisionWhich, question: m[2]!.trim() };
-  }
-  m = BLOCKED_RE.exec(rest);
-  if (m) return { row, line, action: "blocked", reason: m[1]!.trim() };
-  return bad(
-    "not a fix line: `fixed · <sha> — …`, `dropped — …`, `relabel <old>→<new> — …`, `decision — <which> — …`, or `blocked — <evidence>`"
-  );
-}
-
-/** `fix-<round>.txt`: one line per row, then `exit checks:` and its four lines. */
-export function parseFixFile(text: string, opts: ParseFixOptions = {}): FixFile {
-  const issues: RunFileIssue[] = [];
-  const lines: FixLine[] = [];
-  const checks = new Map<ExitCheck, string>();
-  let inChecks = false;
-  let lastCheck: ExitCheck | null = null;
-  const all = text.split("\n");
-  for (let i = 0; i < all.length; i++) {
-    const line = all[i]!.replace(/\r$/, "");
-    const lineNo = i + 1;
-    if (line.trim() === "") {
-      lastCheck = null;
-      continue;
-    }
-    if (EXIT_HEAD_RE.test(line)) {
-      if (inChecks) issues.push({ line: lineNo, message: "`exit checks:` appears twice" });
-      inChecks = true;
-      continue;
-    }
-    if (inChecks) {
-      const m = EXIT_LINE_RE.exec(line);
-      if (m) {
-        const key = m[1] as ExitCheck;
-        if (checks.has(key)) issues.push({ line: lineNo, message: `exit check \`${key}:\` appears twice` });
-        else if (m[2]!.trim() === "") {
-          issues.push({ line: lineNo, message: `exit check \`${key}:\` is empty — write the command and its result, or \`none\` with a reason` });
-        } else checks.set(key, m[2]!.trim());
-        lastCheck = key;
-      } else if (lastCheck && CONTINUATION_RE.test(line)) {
-        checks.set(lastCheck, `${checks.get(lastCheck)} ${line.trim()}`);
-      } else {
-        issues.push({ line: lineNo, message: `after \`exit checks:\` only ${EXIT_CHECKS.map((c) => `\`${c}:\``).join(", ")} lines` });
-      }
-      continue;
-    }
-    const m = FIX_ROW_RE.exec(line);
-    if (!m) {
-      issues.push({ line: lineNo, message: "not a fix line: `<ROW> · fixed|dropped|relabel|decision|blocked …`" });
-      continue;
-    }
-    const row = m[1]!;
-    if (lines.some((l) => l.row === row)) {
-      issues.push({ line: lineNo, message: `${row}: a second line for this row` });
-      continue;
-    }
-    if (opts.rows && !opts.rows.includes(row)) {
-      issues.push({ line: lineNo, message: `${row}: not a row of this round's table` });
-      continue;
-    }
-    const parsed = fixLine(row, m[2]!.trim(), lineNo, opts, issues);
-    if (parsed) lines.push(parsed);
-  }
-  if (!inChecks) issues.push({ message: "missing `exit checks:` and its four lines" });
-  else {
-    for (const c of EXIT_CHECKS) {
-      if (!checks.has(c)) issues.push({ message: `missing exit check \`${c}:\`` });
-    }
-  }
-  for (const row of opts.rows ?? []) {
-    if (!lines.some((l) => l.row === row) && !issues.some((i) => i.message.startsWith(`${row}:`))) {
-      issues.push({ message: `${row}: row has no line` });
-    }
-  }
-  throwIfAny(issues);
-  return { lines, exitChecks: Object.fromEntries(checks) as Record<ExitCheck, string> };
-}
-
 // ── The stage file ───────────────────────────────────────────────────────────────────────────
 
 export const STATUS_WORDS = ["resolved", "unresolved", "agree", "disagree"] as const;
@@ -760,7 +602,7 @@ export interface ParseStageOptions {
   stage: Exclude<Stage, "wave">;
   /** The rows the dispatch gave this reader. Omitted: status coverage is not checked. */
   given?: readonly GivenRow[];
-  /** `build-verifier` must end with a `VERDICT:` line; a global reader's `## New` ids take its prefix. */
+  /** `completeness` must end with a `VERDICT:` line; a global reader's `## New` ids take its prefix. */
   reader?: string;
 }
 
@@ -911,8 +753,8 @@ export function parseStageFile(text: string, opts: ParseStageOptions): StageFile
     if (!(e instanceof RunFileError)) throw e;
     issues.push(...e.issues);
   }
-  if (opts.reader === "build-verifier" && verdict === undefined && !issues.some((i) => /VERDICT/.test(i.message))) {
-    issues.push({ message: "build-verifier ends with `VERDICT: CLEAN` or `VERDICT: INCOMPLETE — <check>`" });
+  if (opts.reader === "completeness" && verdict === undefined && !issues.some((i) => /VERDICT/.test(i.message))) {
+    issues.push({ message: "completeness ends with `VERDICT: CLEAN` or `VERDICT: INCOMPLETE — <check>`" });
   }
   throwIfAny(issues);
   return { status, findings, ...(verdict ? { verdict } : {}), warnings };

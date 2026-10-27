@@ -1,3 +1,5 @@
+import "./helpers/operatorEnv.ts";
+
 import assert from "node:assert/strict";
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -24,12 +26,12 @@ function roleArgs(role: string, tree: string, dispatch: string, out: string): st
 test("a repository role keeps its pins and prompt body without copying frontmatter", () => {
   withTmpDir("codex-role-repo-", (repo) => {
     writeRepoRole(repo, {
-      name: "brief-writer",
+      name: "write-brief",
       codexModel: "gpt-5.6-sol",
       codexReasoningEffort: "xhigh",
       context: { claudeMd: false },
     });
-    const role = roleFromRepo("brief-writer", repo);
+    const role = roleFromRepo("write-brief", repo);
     assert.deepEqual(role, {
       model: "gpt-5.6-sol",
       effort: "xhigh",
@@ -38,12 +40,12 @@ test("a repository role keeps its pins and prompt body without copying frontmatt
       sandbox: null,
     });
     writeRepoRole(repo, {
-      name: "brief-writer",
+      name: "write-brief",
       codexModel: "gpt-5.6-sol",
       codexReasoningEffort: "xhigh",
       codexSandboxMode: "workspace-write",
     });
-    assert.equal(roleFromRepo("brief-writer", repo)?.sandbox, "workspace-write");
+    assert.equal(roleFromRepo("write-brief", repo)?.sandbox, "workspace-write");
   });
 });
 
@@ -87,7 +89,7 @@ test("the real repository supplies review and test roles when no generated TOML 
     const out = join(tree, "out.md");
     writeFileSync(dispatch, "Inspect the implementation.\n");
     const calls: Array<{ role: string; args: string[]; input: string }> = [];
-    for (const role of ["review-cursory", "test-author"]) {
+    for (const role of ["review", "write-tests"]) {
       const status = main(roleArgs(role, tree, dispatch, out), {
         readRole: () => null,
         spawn: (_cmd, args, input) => {
@@ -98,8 +100,8 @@ test("the real repository supplies review and test roles when no generated TOML 
       assert.equal(status, 0);
     }
     assert.equal(calls.length, 2);
-    assert.ok(calls[0]!.input.startsWith(`${CODEX_PREAMBLE}\n\n# review-cursory\n`));
-    assert.ok(calls[1]!.input.startsWith(`${CODEX_PREAMBLE}\n\n# test-author\n`));
+    assert.ok(calls[0]!.input.startsWith(`${CODEX_PREAMBLE}\n\n# review\n`));
+    assert.ok(calls[1]!.input.startsWith(`${CODEX_PREAMBLE}\n\n# write-tests\n`));
     assert.deepEqual(
       calls[0]!.args,
       codexArgs({
@@ -133,7 +135,7 @@ test("every role the skill runs through <codex_role> gets the sandbox its agents
       for (const m of readFileSync(join(root, dir, file), "utf8").matchAll(/<codex_role> ([a-z][a-z-]*)/g)) roles.add(m[1]!);
     }
   }
-  for (const known of ["review-cursory", "test-author"]) assert.ok(roles.has(known), `the scan finds ${known}`);
+  for (const known of ["review", "write-tests"]) assert.ok(roles.has(known), `the scan finds ${known}`);
   const { agents } = JSON.parse(readFileSync(join(root, "agents.json"), "utf8")) as {
     agents: Array<{ name: string; codexSandboxMode?: string }>;
   };
@@ -149,7 +151,7 @@ test("a dry run reports the repo-derived pins and never spawns Codex", () => {
     writeFileSync(dispatch, "Inspect the implementation.\n");
     let spawned = false;
     withCapturedConsole((captured) => {
-      const status = main([...roleArgs("review-cursory", tree, dispatch, out), "--dry-run"], {
+      const status = main([...roleArgs("review", tree, dispatch, out), "--dry-run"], {
         readRole: () => null,
         spawn: () => {
           spawned = true;
@@ -160,7 +162,7 @@ test("a dry run reports the repo-derived pins and never spawns Codex", () => {
       assert.equal(spawned, false);
       assert.deepEqual(captured.errors, []);
       assert.deepEqual(captured.logs.slice(0, 5), [
-        "role: agents.json + agents/review-cursory.md",
+        "role: agents.json + agents/review.md",
         "model: gpt-5.6-sol",
         "effort: high",
         "sandbox: read-only",

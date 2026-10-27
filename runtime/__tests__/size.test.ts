@@ -1,4 +1,6 @@
 /** The `size` step's global fallback: what counts, the bucket, and the three verdict lines. */
+import "./helpers/operatorEnv.ts";
+
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { isUncounted, measure, verdicts } from "../size.ts";

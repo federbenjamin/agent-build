@@ -44,6 +44,7 @@ import {
   BriefPartError,
   type BriefSummary,
   manifestWithoutExercise,
+  ownedFiles,
   sliceExcerpt,
   summariseBrief,
   testRunnerOf,
@@ -148,13 +149,6 @@ async function sliceGuide(path: string): Promise<number> {
   return (await loadThresholds(top)).values.TEST_SLICE_MAX_FUNCTIONS;
 }
 
-/** The lines `--files <id>` prints, or null when the brief holds no such part or slice. */
-function filesOf(s: BriefSummary, id: string): string[] | null {
-  const part = s.parts.find((p) => p.id === id);
-  if (part) return [...part.files, ...part.testFiles];
-  return s.slices.find((w) => w.id === id)?.files ?? null;
-}
-
 export async function main(argv: string[], exit: (code: number) => void = exitWhenFlushed): Promise<void> {
   let text: string;
   let path: string;
@@ -232,7 +226,7 @@ export async function main(argv: string[], exit: (code: number) => void = exitWh
     }
   }
   if (files !== undefined || slice !== undefined) {
-    const out = files !== undefined ? filesOf(summary, files) : excerpt;
+    const out = files !== undefined ? ownedFiles(summary, files) : excerpt;
     if (out === null) {
       console.error(`briefCheck: no ${files !== undefined ? "part or slice" : "slice"} ${files ?? slice} in the brief`);
       exit(1);

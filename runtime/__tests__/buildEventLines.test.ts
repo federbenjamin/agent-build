@@ -3,6 +3,8 @@
  * SKILL's quoting rule and handed to a shell. A value holding `$(…)`, a backtick, or a `'` must reach
  * the event as data and never run; and no line names a fixed unit id, so two units never share one.
  */
+import "./helpers/operatorEnv.ts";
+
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -10,8 +12,7 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { BUILD_EVENT_CMD } from "../buildEvent.ts";
-import { type BuildEvent, readBuildEvent } from "../lib/buildEvents.ts";
+import { BUILD_EVENT_CMD, type BuildEvent, readBuildEvent } from "../lib/buildEvents.ts";
 import { spawnSmoke } from "./helpers/spawnSmoke.ts";
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -44,6 +45,10 @@ function hostile(dir: string): Record<string, string> {
     "unit id": `feat/${noSpace("unitid")}`,
     branch: `feat/a=b${noSpace("branch")}`,
     title: spaced("title"),
+    "plan title": spaced("plan"),
+    "plan path": `${dir}/${noSpace("planpath")}`,
+    // The parser refuses any `repo` but `<owner>/<name>` of word characters, `.` and `-`, so no shell-active value reaches it.
+    repo: "octo/app",
     "what the operator must do": spaced("needs"),
     n: "12",
   };
@@ -156,7 +161,7 @@ test("emit lines: a unit outside the plan keeps one id, distinct from every othe
   const branches = ["feat/a=b", "feat/a", "fix/=x==y=", "feat/a=b", "chore/x"];
   const runs = runids.map((runid, i) => ({ runid, branch: branches[i]! }));
   const ids = runs.map(({ runid, branch }) => {
-    const plan = runLine(planLine, () => ({ runid, branch }));
+    const plan = runLine(planLine, () => ({ runid, branch, repo: "octo/app" }));
     assert.equal(plan.status, 0, `${branch}: ${plan.stderr}`);
     assert.ok(plan.event?.event === "plan", `${branch}: no plan event`);
     assert.equal(plan.event.units.length, 1, branch);

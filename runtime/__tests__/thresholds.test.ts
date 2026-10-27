@@ -1,4 +1,6 @@
 /** The thresholds loader: defaults, a repo's TS or JSON override, and a named file that is missing. */
+import "./helpers/operatorEnv.ts";
+
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

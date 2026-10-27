@@ -6,10 +6,10 @@
  *   node ~/.agent-build/runtime/stagePlan.ts --run-dir <d> --stage <stage> [--base <ref>] [--from <sha>]
  *
  *   stage confirm-1 · range 4f1c2a9..8e2d0b1 · pr-code: changed (3 paths) (source repo) · fix-security: fires (path x) (source repo)
- *   reader: review-cursory-codex — owed (every read after a fix)
- *   reader: gate-silent-failure-hunter — sits out (12 counted lines < 20, no catch/await/Promise)
- *   reader: security-review — owed (R2; fix-security fires)
- *   reader: build-verifier — not owed (no amend brief:, no rename); run <manifest> --brief-file <brief> --no-exercise yourself
+ *   reader: review-codex — owed (every read after a fix)
+ *   reader: silent-failures — sits out (12 counted lines < 20, no catch/await/Promise)
+ *   reader: security — owed (R2; fix-security fires)
+ *   reader: completeness — not owed (no amend brief:, no rename); run <manifest> --brief-file <brief> --no-exercise yourself
  *   hand-test: all claims (H1 H2 H3) · needs: stack
  *
  * `<stage>` is confirm-1, confirm-2, last, escalate, drift, drift-confirm, or unbank (the one
