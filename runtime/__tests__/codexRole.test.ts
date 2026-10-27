@@ -1,8 +1,10 @@
+import "./helpers/operatorEnv.ts";
+
 import assert from "node:assert/strict";
 import { mkdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
-import { codexArgs, codexEnv, defaultSandbox, main, parseRoleToml, type RolePins } from "../codexRole.ts";
+import { codexArgs, codexEnv, codexPrompt, defaultSandbox, main, parseRoleToml, planCodexRole, type RolePins } from "../codexRole.ts";
 import { withCapturedConsole } from "./helpers/captureConsole.ts";
 import { withTmpDir } from "./helpers/tmpDir.ts";
 
@@ -21,7 +23,7 @@ function roleToml(overrides: Partial<Record<string, string | number>> = {}): str
 }
 
 function roleArgs(tree: string, dispatch: string, out: string): string[] {
-  return ["test-author", "--tree", tree, "--dispatch", dispatch, "--out", out];
+  return ["write-tests", "--tree", tree, "--dispatch", dispatch, "--out", out];
 }
 
 test("a generated Codex role TOML preserves all three pins", () => {
@@ -54,13 +56,13 @@ test("the role's own sandbox wins over the default: toml sandbox_mode, then the 
       return args[args.indexOf("-s") + 1];
     };
     const repoPins = (sandbox: RolePins["sandbox"]): RolePins => ({ ...parseRoleToml(roleToml()), sandbox });
-    // defaultSandbox("test-author") is workspace-write; each pin below says otherwise and wins.
-    assert.equal(sandboxOf("test-author", { readRole: () => roleToml({ sandbox_mode: "read-only" }) }), "read-only");
-    assert.equal(sandboxOf("review-cursory", { readRole: () => roleToml({ sandbox_mode: "workspace-write" }) }), "workspace-write");
-    assert.equal(sandboxOf("test-author", { readRole: () => null, repoRole: () => repoPins("read-only") }), "read-only");
+    // defaultSandbox("write-tests") is workspace-write; each pin below says otherwise and wins.
+    assert.equal(sandboxOf("write-tests", { readRole: () => roleToml({ sandbox_mode: "read-only" }) }), "read-only");
+    assert.equal(sandboxOf("review", { readRole: () => roleToml({ sandbox_mode: "workspace-write" }) }), "workspace-write");
+    assert.equal(sandboxOf("write-tests", { readRole: () => null, repoRole: () => repoPins("read-only") }), "read-only");
     // Named nowhere: the default.
-    assert.equal(sandboxOf("test-author", { readRole: () => roleToml() }), "workspace-write");
-    assert.equal(sandboxOf("review-cursory", { readRole: () => null, repoRole: () => repoPins(null) }), "read-only");
+    assert.equal(sandboxOf("write-tests", { readRole: () => roleToml() }), "workspace-write");
+    assert.equal(sandboxOf("review", { readRole: () => null, repoRole: () => repoPins(null) }), "read-only");
   });
 });
 
@@ -99,8 +101,8 @@ test("a generated Codex role TOML missing a pin identifies that key", () => {
 });
 
 test("a writer can edit its isolated worktree while a cursory reader cannot", () => {
-  assert.equal(defaultSandbox("test-author"), "workspace-write");
-  assert.equal(defaultSandbox("review-cursory"), "read-only");
+  assert.equal(defaultSandbox("write-tests"), "workspace-write");
+  assert.equal(defaultSandbox("review"), "read-only");
 });
 
 test("the Codex process receives the pinned exec argv in its required order", () => {
@@ -177,7 +179,7 @@ test("a paired cursory read is read-only and preserves its log destination", () 
     writeFileSync(dispatch, "Read this diff.\n");
     let call: { args: string[]; log: string | null } | undefined;
     const status = withCapturedConsole(() =>
-      main(["review-cursory", "--tree", dir, "--dispatch", dispatch, "--out", out, "--log", log], {
+      main(["review", "--tree", dir, "--dispatch", dispatch, "--out", out, "--log", log], {
         readRole: () => roleToml(),
         spawn: (_cmd, args, _input, receivedLog) => {
           call = { args, log: receivedLog };
@@ -221,17 +223,17 @@ test("invalid role invocations return one diagnostic line and status 2", () => {
       },
       {
         name: "missing tree",
-        argv: ["test-author", "--dispatch", dispatch, "--out", out],
+        argv: ["write-tests", "--dispatch", dispatch, "--out", out],
         message: /--tree/,
       },
       {
         name: "missing dispatch",
-        argv: ["test-author", "--tree", dir, "--out", out],
+        argv: ["write-tests", "--tree", dir, "--out", out],
         message: /--dispatch/,
       },
       {
         name: "missing out",
-        argv: ["test-author", "--tree", dir, "--dispatch", dispatch],
+        argv: ["write-tests", "--tree", dir, "--dispatch", dispatch],
         message: /--out/,
       },
       {
@@ -340,4 +342,23 @@ test("an unknown flag becomes a usage exit with the shared strict-argv diagnosti
 
 test("every Codex run gets DO_NOT_TRACK=1 and keeps the caller's env", () => {
   assert.deepEqual(codexEnv({ PATH: "/bin", HOME: "/h" }), { PATH: "/bin", HOME: "/h", DO_NOT_TRACK: "1" });
+});
+
+test("addDirs reach a writing sandbox as --add-dir after -s, and a read-only one ignores them", () => {
+  const base = { tree: "/t", model: "m", effort: "low", out: "/o", projectDocs: true, addDirs: ["/extra"] };
+  const writing = codexArgs({ ...base, sandbox: "workspace-write" });
+  assert.deepEqual(writing.slice(2, 6), ["/t", "-s", "workspace-write", "--add-dir"]);
+  assert.equal(writing[6], "/extra");
+  assert.ok(!codexArgs({ ...base, sandbox: "read-only" }).includes("--add-dir"));
+});
+
+test("planCodexRole resolves the role and argv the CLI would run, and null for a role nobody defines", () => {
+  const toml = roleToml({ sandbox_mode: "workspace-write" });
+  const plan = planCodexRole("any", { tree: "/t", out: "/o", addDirs: ["/x"] }, { readRole: () => toml });
+  assert.equal(plan!.sandbox, "workspace-write");
+  assert.equal(plan!.from, "the readRole seam");
+  assert.equal(plan!.pins.instructions, "Follow the role contract.");
+  assert.ok(plan!.args.includes("--add-dir") && plan!.args.includes("/x"));
+  assert.equal(planCodexRole("none", { tree: "/t", out: "/o" }, { readRole: () => null, repoRole: () => null }), null);
+  assert.equal(codexPrompt("I", "D"), "I\n\n---\n\nD");
 });

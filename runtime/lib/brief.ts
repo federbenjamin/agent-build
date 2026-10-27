@@ -840,6 +840,14 @@ export interface BriefSummary {
   legacy: BriefPart[];
 }
 
+/** The files part or slice `id` owns (a part's files and its test files; a slice's files), or null
+ *  when the brief holds no such part or slice. */
+export function ownedFiles(s: BriefSummary, id: string): string[] | null {
+  const part = s.parts.find((p) => p.id === id);
+  if (part) return [...part.files, ...part.testFiles];
+  return s.slices.find((w) => w.id === id)?.files ?? null;
+}
+
 /** Read every part of a brief or a `--from-branch` hand-test file, throwing the first
  *  `BriefPartError`. With `legacyOk` (a first-commit read), a missing part counts as the brief
  *  predating it — 0 claims, no model, no targets — and is listed in `legacy`; a malformed part

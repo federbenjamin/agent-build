@@ -7,6 +7,8 @@
  * the run's class rides its own `class:` line and is never a check name.
  */
 
+import "./helpers/operatorEnv.ts";
+
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as gateMarkers from "../lib/gateMarkers.ts";

@@ -127,7 +127,7 @@ export function staleRounds(inp: ReplayInputs): string[] {
 }
 
 const isDir = (p: string): boolean => existsSync(p) && statSync(p).isDirectory();
-const CODEX_PAIRED = /^codex:\s*review-cursory\s*$/;
+const CODEX_PAIRED = /^codex:\s*review\s*$/;
 
 /**
  * Reader files no round reads, and wave readers with no file: a `*.md` in the run dir that is no
@@ -148,7 +148,7 @@ export function unreadFiles(inp: ReplayInputs): string[] {
   }
   const wave = ledger.lines.get("wave");
   const named = [...ledger.waveReaders, ...ledger.waveRepoReaders];
-  if (wave?.text.some((s) => CODEX_PAIRED.test(s))) named.push("review-cursory-codex");
+  if (wave?.text.some((s) => CODEX_PAIRED.test(s))) named.push("review-codex");
   for (const reader of named) {
     if (!root.some((f) => f.reader === reader)) {
       out.push(`wave: names ${reader} — no ${reader}.md in the run dir; re-spawn it, or record why it left none`);

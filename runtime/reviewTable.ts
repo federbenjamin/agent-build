@@ -1,8 +1,8 @@
 /**
  * reviewTable — the one writer of `<run-dir>/table.json`, `table-<round>.md`, and the leftovers list,
  * and the one checker of every file a reader, the fixer, the hand tester, or the session writes into
- * the run dir. It gathers files and hands them to `./lib/table.ts` and `./lib/runFiles.ts`, which
- * decide everything.
+ * the run dir. It gathers files and hands them to `./lib/table.ts`, `./lib/runFiles.ts` and
+ * `./lib/fixFile.ts`, which decide everything.
  *
  *   node ~/.agent-build/runtime/reviewTable.ts build --run-dir <d> --round <1|2|3|escalate|drift-<n>|final> [--head <sha>]
  *   node ~/.agent-build/runtime/reviewTable.ts check --file <path> --stage <stage> [--run-dir <d>]
@@ -52,13 +52,11 @@ import { STAGE_READER_NAMES } from "./lib/riskClass.ts";
 import { gatherRound, missingHandTestOutputs, readerFiles, resolveTargets } from "./lib/runDir.ts";
 import {
   FIX_ROUNDS,
-  type FixFile,
   type FixRound,
   type GivenRow,
   isFixRound,
   isRoundId,
   isStage,
-  parseFixFile,
   parseHandTestFile,
   parseReaderFile,
   parseSessionFile,
@@ -77,6 +75,7 @@ import {
   stageIdRange,
   type TableJson,
 } from "./lib/runFiles.ts";
+import { type FixFile, parseFixFile } from "./lib/fixFile.ts";
 import {
   buildRound,
   type Carry,
@@ -353,7 +352,7 @@ function renderDispatch(stage: StageKey, reader: string, rows: StageRows | null,
     );
   }
   out.push(`- \`## New\`: one finding block per new finding, ids \`${prefix}.${min}\` to \`${prefix}.${max}\`, or a line starting \`NO FINDINGS\`.`);
-  if (reader === "build-verifier") out.push("- Last line: `VERDICT: CLEAN` or `VERDICT: INCOMPLETE — <check>`.");
+  if (reader === "completeness") out.push("- Last line: `VERDICT: CLEAN` or `VERDICT: INCOMPLETE — <check>`.");
   if (rows === null || given.length === 0) return `${out.join("\n")}\n`;
   out.push("", `The rows are round ${rows.carry.from}'s, built at ${rows.round.head}; the fixer's lines are fix-${rows.carry.fix}.txt's.`);
   const fixLines = rows.fixText.split("\n");

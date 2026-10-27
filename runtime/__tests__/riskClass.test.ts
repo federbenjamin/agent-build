@@ -5,6 +5,8 @@
  * stay in each repo (its `signals` step).
  */
 
+import "./helpers/operatorEnv.ts";
+
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { readFileSync } from "node:fs";
@@ -44,28 +46,28 @@ test("RISK_CLASS_READERS: each class's reader set is a strict superset of the cl
   }
 });
 
-test("RISK_CLASS_READERS: build-verifier is in every class wave", () => {
+test("RISK_CLASS_READERS: completeness is in every class wave", () => {
   for (const cls of RISK_CLASSES) {
     assert.ok(
-      RISK_CLASS_READERS[cls].includes("build-verifier"),
-      `${cls} must include build-verifier; only the brief's yaml-bound sit-out may omit it from a run`
+      RISK_CLASS_READERS[cls].includes("completeness"),
+      `${cls} must include completeness; only the brief's yaml-bound sit-out may omit it from a run`
     );
   }
 });
 
-test("RISK_CLASS_READERS: three classes, security-review at R2", () => {
+test("RISK_CLASS_READERS: three classes, security at R2", () => {
   assert.deepEqual(RISK_CLASSES, ["R0", "R1", "R2"]);
-  assert.deepEqual(RISK_CLASS_READERS.R0, ["review-cursory", "build-verifier"]);
+  assert.deepEqual(RISK_CLASS_READERS.R0, ["review", "completeness"]);
   assert.deepEqual(RISK_CLASS_READERS.R1, [
-    "review-cursory",
-    "gate-silent-failure-hunter",
-    "build-verifier",
+    "review",
+    "silent-failures",
+    "completeness",
   ]);
   assert.deepEqual(RISK_CLASS_READERS.R2, [
-    "review-cursory",
-    "gate-silent-failure-hunter",
-    "build-verifier",
-    "security-review",
+    "review",
+    "silent-failures",
+    "completeness",
+    "security",
   ]);
 });
 
@@ -91,17 +93,17 @@ test("bonded: every READER_NAMES name is a declared agent in agents.json", () =>
 
 test("READER_NAMES stays the five wave readers; STAGE_READER_NAMES adds only the paired Codex read", () => {
   assert.deepEqual(READER_NAMES, [
-    "review-cursory",
-    "gate-silent-failure-hunter",
-    "build-verifier",
+    "review",
+    "silent-failures",
+    "completeness",
     "simplifier",
-    "security-review",
+    "security",
   ]);
-  assert.deepEqual(STAGE_READER_NAMES, [...READER_NAMES, "review-cursory-codex"]);
+  assert.deepEqual(STAGE_READER_NAMES, [...READER_NAMES, "review-codex"]);
 });
 
 test("FLOW_AGENTS are the builder, fixer, and hand tester, and none is a reader token", () => {
-  assert.deepEqual(FLOW_AGENTS, ["builder", "fixer", "hand-tester"]);
+  assert.deepEqual(FLOW_AGENTS, ["builder", "fixer", "hand-test"]);
   for (const agent of FLOW_AGENTS) {
     assert.equal((STAGE_READER_NAMES as readonly string[]).includes(agent), false, agent);
     assert.throws(() => parseWaveLine(agent), /not a reader name/);
@@ -143,11 +145,11 @@ test("retiredClassReason: names the R2 re-pin for an R3 line, and is null otherw
 
 test("parseWaveLine: class readers before the first |, repo readers from a repo: segment, typos throw", () => {
   assert.deepEqual(
-    parseWaveLine("review-cursory build-verifier | skipped: simplifier — 40 < 100 | repo: comment-reader"),
-    { readers: ["review-cursory", "build-verifier"], repoReaders: ["comment-reader"] }
+    parseWaveLine("review completeness | skipped: simplifier — 40 < 100 | repo: comment-reader"),
+    { readers: ["review", "completeness"], repoReaders: ["comment-reader"] }
   );
   assert.deepEqual(parseWaveLine(undefined), { readers: [], repoReaders: [] });
   assert.throws(() => parseWaveLine("comment-reader"), /not a reader name/);
-  assert.throws(() => parseWaveLine("review-cursory | repo comment-reader"), /repo-reader segment/);
-  assert.throws(() => parseWaveLine("review-cursory | repo: "), /repo-reader segment/);
+  assert.throws(() => parseWaveLine("review | repo comment-reader"), /repo-reader segment/);
+  assert.throws(() => parseWaveLine("review | repo: "), /repo-reader segment/);
 });

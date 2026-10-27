@@ -1,0 +1,4 @@
+--- /dev/null
++++ b/greet.ts
+@@ -0,0 +1 @@
++export const greet = (name: string): string => `hello ${name}`;

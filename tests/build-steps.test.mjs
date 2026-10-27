@@ -1,3 +1,5 @@
+import "../runtime/__tests__/helpers/operatorEnv.ts";
+
 import { test } from "node:test";
 import { execFileSync, spawnSync } from "node:child_process";
 import assert from "node:assert/strict";
@@ -5,10 +7,6 @@ import { existsSync, mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FALLBACKS, codexOnPath, resolveSteps } from "../runtime/steps.ts";
-
-// Strip inherited GIT_* before anything spawns git: an inherited GIT_DIR (a hook) would answer the
-// profile and origin probes from another repo.
-for (const k of Object.keys(process.env)) if (k.startsWith("GIT_")) delete process.env[k];
 
 function repo(toml) {
   const dir = mkdtempSync(join(tmpdir(), "build-steps-"));

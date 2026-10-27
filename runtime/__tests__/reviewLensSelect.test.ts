@@ -4,6 +4,8 @@
  * catalog and the locator dedupe are gone; the review table (`lib/table.ts`) merges findings now.
  */
 
+import "./helpers/operatorEnv.ts";
+
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as ReviewLensSelect from "../reviewLensSelect.ts";

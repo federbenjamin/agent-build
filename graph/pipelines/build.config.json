@@ -1,0 +1,71 @@
+{
+  "graph": "build.ts",
+  "pipeline": "build/pipeline.ts",
+  "agent": {
+    "adapter": "claude",
+    "plugin": "agent-build"
+  },
+  "check": {
+    "adapter": "pipeline"
+  },
+  "tracker": {
+    "adapter": "linear"
+  },
+  "forge": {
+    "adapter": "github"
+  },
+  "roles": {
+    "repo-review": {
+      "agent": {
+        "adapter": "claude",
+        "agentFromItem": true
+      }
+    },
+    "prior-art": {
+      "classifier": {
+        "adapter": "jev",
+        "setup": "../classifiers/prior-art.json"
+      }
+    },
+    "review-codex": {
+      "agent": {
+        "adapter": "codex",
+        "role": "review"
+      },
+      "classifier": {
+        "adapter": "jev",
+        "setup": "../classifiers/review-codex.json"
+      }
+    },
+    "completeness": {
+      "classifier": {
+        "adapter": "jev",
+        "setup": "../classifiers/completeness.json"
+      }
+    },
+    "simplifier": {
+      "classifier": {
+        "adapter": "jev",
+        "setup": "../classifiers/simplifier.json"
+      }
+    },
+    "security": {
+      "classifier": {
+        "adapter": "jev",
+        "setup": "../classifiers/security.json"
+      }
+    },
+    "silent-failures": {
+      "classifier": {
+        "adapter": "jev",
+        "setup": "../classifiers/silent-failures.json"
+      }
+    },
+    "review-fix": {
+      "classifier": {
+        "adapter": "jev",
+        "setup": "../classifiers/review-fix.json"
+      }
+    }
+  }
+}

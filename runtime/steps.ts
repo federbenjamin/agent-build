@@ -6,6 +6,8 @@
 // An unknown key is an error, never a silent fallback: a typo would quietly weaken the repo.
 // Two keys name repo files, not commands: `thresholds` (read by thresholds.ts) and `notes` (the
 // repo's build notes: a `## <agent or skill>` section per role that the role reads first).
+// `publish` sends the repo's tree somewhere public (this repo's: `publish.ts`); it has no fallback,
+// and the no-push guard keeps a subagent from running it, as it does `push`.
 // Codex is optional: `codex_role` on its fallback resolves to no command when no `codex` is on PATH.
 // `tests` and `checks` fall back to `npm test` when the repo's package.json has a real test script,
 // and `install` to the frozen install of its pnpm or npm lockfile.
@@ -13,6 +15,13 @@
 // is never filled from commits); `merge` readies the draft, then turns on auto-merge, or merges at
 // once where the repo does not allow auto-merge. `push` names the branch: a branch cut from origin/main
 // tracks origin/main or nothing, and a bare `git push` refuses both.
+// A graph run (graph/) runs `push`, `pr_open` and `merge` itself, with the PR's title, body file,
+// number, branch and risk class in the environment under the names `PR_STEP_ENV` holds
+// (BUILD_PR_TITLE, BUILD_PR_BODY_FILE, BUILD_PR_NUMBER, BUILD_PR_BRANCH, BUILD_PR_CLASS), each set
+// when the run knows it: a repo's own step reads them there. On `pr_open`'s fallback the run adds the title and body flags itself.
+// A repo's own `pr_open` decides for itself whether the PR opens as a draft, and its `merge` readies a
+// draft; the run waits on the operator before its merge whenever it wanted a draft, so a PR a repo's
+// step opened ready never merges unasked.
 //   node steps.ts [repo-dir] [--json | --get <step>]
 //   node steps.ts --template <repo name>     the build-steps.toml a new repo starts from
 import { accessSync, constants, existsSync, readFileSync, statSync } from "node:fs";
@@ -30,8 +39,22 @@ export const FALLBACKS: Record<string, string | null> = {
   size: `${RUNTIME}/size.ts`, signals: null, checks: null, exit_checks: null, fix_checks: null, tests: null,
   install: null, db_gate: null, manifest: null, mutation_proof: null, push: "git push -u origin HEAD",
   pr_open: "gh pr create --draft", merge: "gh pr ready && gh pr merge --auto --squash || gh pr merge --squash",
-  codex_role: `${RUNTIME}/codexRole.ts`, push_stats: null, thresholds: null, notes: null,
+  codex_role: `${RUNTIME}/codexRole.ts`, push_stats: null, publish: null, thresholds: null, notes: null,
 };
+
+/** The environment a graph run hands its `push`, `pr_open` and `merge` steps: the PR's title, the
+ *  file holding its body, its number, the branch it is opened from, and the brief's risk class as
+ *  the brief writes it (`R1`; unset when the brief has none). */
+export const PR_STEP_ENV = {
+  title: "BUILD_PR_TITLE",
+  bodyFile: "BUILD_PR_BODY_FILE",
+  number: "BUILD_PR_NUMBER",
+  branch: "BUILD_PR_BRANCH",
+  riskClass: "BUILD_PR_CLASS",
+} as const;
+
+/** Where a private repo keeps its steps, relative to its tree. */
+export const STEPS_FILE = ".claude/build-steps.toml";
 
 export type Step = { step: string; command: string | null; source: "repo" | "fallback" };
 
@@ -107,10 +130,11 @@ type ResolveOpts = { env?: NodeJS.ProcessEnv };
  *  any other's from its own tree. `file` is the file that was looked at. `opts.env` (default
  *  `process.env`) feeds `codexOnPath` for the `codex_role` fallback. */
 export function resolveSteps(repo: string, opts: ResolveOpts = {}): { file: string; found: boolean; steps: Step[] } {
-  const tree = join(repo, ".claude/build-steps.toml");
+  const tree = join(repo, STEPS_FILE);
   let file = tree;
-  if (repoProfile(repo) === "public") {
-    const dir = storeDir(repo);
+  const git = opts.env === undefined ? {} : { env: opts.env };
+  if (repoProfile(repo, git) === "public") {
+    const dir = storeDir(repo, git);
     file = join(dir, "build-steps.toml");
     if (existsSync(tree)) {
       throw new Error(`${tree}: a public repo keeps its build steps in the store, at ${file} — move it there`);

@@ -20,10 +20,10 @@ import type { Ledger } from "./ledger.ts";
 import { briefLocation } from "./repoId.ts";
 import { STAGE_READER_NAMES } from "./riskClass.ts";
 import type { FixRound, HandTestLine, RoundId, TableJson } from "./runFiles.ts";
-import { type InputFile, type ReaderInput, roundIntake, roundStages, type StageInput } from "./table.ts";
+import { type InputFile, intakeStages, type ReaderInput, roundIntake, type RoundIntake, type StageInput } from "./table.ts";
 
 export interface ReaderFile {
-  /** The file name, `review-cursory-2.md`. */
+  /** The file name, `review-2.md`. */
   name: string;
   path: string;
   /** The reader it belongs to; `session` for `session.md`. */
@@ -76,12 +76,12 @@ function optionalFile(runDir: string, name: string): InputFile | null {
 
 const HAND_TEST_FILE = /^hand-test-([1-9]\d*)\.txt$/;
 
-/** Every file round `round`'s intake (`roundIntake`) names, read from the run dir. A stage folder
- *  that does not exist is a stage that did not run. `table` is `table.json` as the round sees it. */
-export function gatherRound(runDir: string, round: RoundId, ledger: Ledger, table: TableJson) {
-  const intake = roundIntake(round, table);
+/** Every file round `round`'s intake (`roundIntake`, or the caller's own `intake`) names, read from the
+ *  run dir. A stage folder that does not exist is a stage that did not run. `table` is `table.json` as
+ *  the round sees it. */
+export function gatherRound(runDir: string, round: RoundId, ledger: Pick<Ledger, "waveRepoReaders">, table: TableJson, intake: RoundIntake = roundIntake(round, table)) {
   const wave = intake.wave ? readerInputs(runDir, "", ledger.waveRepoReaders) : undefined;
-  const stages: StageInput[] = roundStages(round, table).map((stage) => {
+  const stages: StageInput[] = intakeStages(intake).map((stage) => {
     const dir = join(runDir, stage.folder);
     const ran = isDir(dir);
     return { stage, ran, files: ran ? readerInputs(dir, `${stage.folder}/`, []) : [] };

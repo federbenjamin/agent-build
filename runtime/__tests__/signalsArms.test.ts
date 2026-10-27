@@ -1,5 +1,7 @@
 /** signalsArms: a repo's `--app-code` / `--fix-security` arms, the fallbacks when a repo has none,
  *  and `prCode` over a real fixture repo. */
+import "./helpers/operatorEnv.ts";
+
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";

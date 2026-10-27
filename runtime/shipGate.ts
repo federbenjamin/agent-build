@@ -34,7 +34,7 @@ import { RISK_CLASS_READERS, type ReaderName } from "./lib/riskClass.ts";
 
 /** The class readers a small diff lets sit out (`WAVE_HUNTER_MIN_LINES`); every other class reader
  * the wave owes by name. */
-const SITS_OUT_BY_SIZE: readonly ReaderName[] = ["gate-silent-failure-hunter"];
+const SITS_OUT_BY_SIZE: readonly ReaderName[] = ["silent-failures"];
 
 export interface GateResult {
   ok: boolean;
@@ -58,14 +58,14 @@ export function waveFailures(ledger: Ledger): string[] {
   if (!ledger.lines.has("wave")) return [];
   const failures: string[] = [];
   const briefed = ledger.fromBranch === null;
-  if (briefed && !ledger.waveReaders.includes("build-verifier")) {
+  if (briefed && !ledger.waveReaders.includes("completeness")) {
     failures.push(
-      "wave: no build-verifier — the verifier reads every run that has a brief, at every class; only `--from-branch` is exempt (/build §CLOSE)"
+      "wave: no completeness — the verifier reads every run that has a brief, at every class; only `--from-branch` is exempt (/build §CLOSE)"
     );
   }
   const skipped = waveSkipped(ledger);
   for (const reader of RISK_CLASS_READERS[ledger.cls]) {
-    if (reader === "build-verifier" || ledger.waveReaders.includes(reader)) continue;
+    if (reader === "completeness" || ledger.waveReaders.includes(reader)) continue;
     const sitsOut = SITS_OUT_BY_SIZE.includes(reader);
     if (sitsOut && skipped?.includes(reader) === true) continue;
     failures.push(

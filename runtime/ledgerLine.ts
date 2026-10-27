@@ -11,8 +11,8 @@
  *
  * Each `|`-separated text segment of a line is one argument; each `key=value` field is
  * `--key value`. `sha`, `from`, and `measured-at` take a sha or the word `head`, read from the
- * cwd's HEAD. `wave: review-cursory, build-verifier | skipped: simplifier — 40 < 100 | sha=<head>` is
- *   … wave "review-cursory, build-verifier" "skipped: simplifier — 40 < 100" --sha head
+ * cwd's HEAD. `wave: review, completeness | skipped: simplifier — 40 < 100 | sha=<head>` is
+ *   … wave "review, completeness" "skipped: simplifier — 40 < 100" --sha head
  *
  * The first line written is `class`: it creates the file and puts `flow: 2` under it. A move that
  * already has a different line is refused; `--replace` rewrites the move's last line in place (a

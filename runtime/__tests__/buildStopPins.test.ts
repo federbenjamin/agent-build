@@ -2,6 +2,8 @@
  * Pins for SKILL.md, BUILD.md, SHIP.md, and the manifest after landing 2: parts and run trees in the
  * build stop, one drift group at SHIP, the batch's Todo line, the aliases gone, and the SKILL.md cap.
  */
+import "./helpers/operatorEnv.ts";
+
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -77,7 +79,7 @@ test("BUILD: a builder per part, its dispatch and watch list, DB slices as Claud
   assert.match(stop("SKILL.md"), /agent-watchdog\.sh --flags <each spawn's \.output path>… \[--part-files <\.output path>=<file>\]…/);
   assert.match(eight, /parts whose every `after:` part has merged, the part with the most parts waiting behind it first; then `db` writers; then `plain` writers/);
   assert.match(eight, /\*\*A `plain` slice runs on Codex/);
-  assert.match(eight, /\*\*A `db` slice runs as a Claude spawn, in its own worktree\.\*\* Spawn `test-author`[^\n]*`isolation: "worktree"`/);
+  assert.match(eight, /\*\*A `db` slice runs as a Claude spawn, in its own worktree\.\*\* Spawn `write-tests`[^\n]*`isolation: "worktree"`/);
   assert.match(eight, /never the brief path/);
   const ten = step(build, 10);
   const merge = ten.indexOf("**Merge each part**");
@@ -86,7 +88,7 @@ test("BUILD: a builder per part, its dispatch and watch list, DB slices as Claud
   assert.ok(merge >= 0 && rebuild > merge && transplant > rebuild, "BUILD step 10: parts, then the rebuild commit, then the transplant");
   assert.match(ten, /\*\*Verify: `db` slices one at a time, `plain` slices side by side\.\*\*/);
   assert.match(ten, /each `plain` verify gets its own tree cut at the integrated head/);
-  assert.match(readFileSync(join(ROOT, "agents/test-author.md"), "utf8"),/`db` verify runs go one at a time, since they share the run's stack; `plain` ones run side by side\./);
+  assert.match(readFileSync(join(ROOT, "agents/write-tests.md"), "utf8"),/`db` verify runs go one at a time, since they share the run's stack; `plain` ones run side by side\./);
   assert.match(ten, /git worktree remove --force` each `db` writer's tree/);
   assert.doesNotMatch(build, /Every writer runs on Codex/);
 });
@@ -124,9 +126,9 @@ test("SHIP: the run tree, one drift group then drift-merge, the batch's Todo fli
   assert.match(five, /when this was the session's last unit and Start's `EnterWorktree` made the tree: `ExitWorktree` with `action: "keep"` \(never `"remove"`\)/);
 });
 
-test("the test-author manifest description states the U21 verdict's branch K", () => {
-  const entry = MANIFEST.agents.find((a) => a.name === "test-author");
-  assert.ok(entry, "test-author is a manifest agent");
+test("the write-tests manifest description states the U21 verdict's branch K", () => {
+  const entry = MANIFEST.agents.find((a) => a.name === "write-tests");
+  assert.ok(entry, "write-tests is a manifest agent");
   assert.match(entry.description, /A database slice runs as a Claude spawn in its own worktree; every other slice runs on Codex/);
   assert.doesNotMatch(entry.description, /\. Runs on Codex\.$/);
 });

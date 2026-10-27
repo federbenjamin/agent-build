@@ -18,29 +18,29 @@ printf '\033[?25l'
 printf ' %stodo-cli%s  > %s\n\n' "$DIM" "$R" "/build add a --json flag to \`todo list\`"
 
 row BRIEF "$AGENT" "prior-art" "reuse: src/format/table.ts already walks the rows"
-row "" "$AGENT" "brief-writer" "brief committed before any code: 2 parts, 6 hand-test claims" 3f1c9a2
+row "" "$AGENT" "write-brief" "brief committed before any code: 2 parts, 6 hand-test claims" 3f1c9a2
 row "" "$DECIDE" "class R1" "a user would see wrong output; yours to veto"
 echo
 row BUILD "$AGENT" "builder P1" "--json on \`todo list\`, in its own worktree" 8b04e7d
 row "" "$AGENT" "builder P2" "toJson() in src/format/, in its own worktree" c71d2a9
-row "" "$AGENT" "test-author" "9 tests from its slice of the brief, not from the code"
+row "" "$AGENT" "write-tests" "9 tests from its slice of the brief, not from the code"
 row "" "$SCRIPT" "merge" "parts and tests merged, exit checks pass" e25b6f0
 echo
 row CLOSE "$SCRIPT" "wave" "five readers at once, each in its own review tree"
-reader "$AGENT" "review-cursory" "4 findings"
-reader "$AGENT" "review-cursory (Codex)" "2 findings"
-reader "$AGENT" "gate-silent-failure-hunter" "2 findings"
+reader "$AGENT" "review" "4 findings"
+reader "$AGENT" "review (Codex)" "2 findings"
+reader "$AGENT" "silent-failures" "2 findings"
 reader "$AGENT" "simplifier" "1 finding"
-reader "$AGENT" "build-verifier" "CLEAN"
+reader "$AGENT" "completeness" "CLEAN"
 row "" "$SCRIPT" "reviewTable.ts" "fix table 1: 9 rows (behavior 3, structure 1, text 5)"
 row "" "$AGENT" "fixer, round 1" "9/9 rows fixed by a fresh agent" a90d3be
-reader "$AGENT" "review-cursory (Codex)" "1 finding"
-reader "$AGENT" "gate-silent-failure-hunter" "clear"
-reader "$AGENT" "hand-tester" "5/6 claims pass, H4 fails on the code"
+reader "$AGENT" "review (Codex)" "1 finding"
+reader "$AGENT" "silent-failures" "clear"
+reader "$AGENT" "hand-test" "5/6 claims pass, H4 fails on the code"
 row "" "$SCRIPT" "reviewTable.ts" "fix table 2: 2 rows (behavior 2)"
 row "" "$AGENT" "fixer, round 2" "2/2 rows fixed by another fresh agent" d4e81c7
-reader "$AGENT" "review-cursory (Codex)" "clean"
-reader "$AGENT" "hand-tester" "6/6 claims pass"
+reader "$AGENT" "review (Codex)" "clean"
+reader "$AGENT" "hand-test" "6/6 claims pass"
 echo
 row SHIP "$SCRIPT" "checks" "pnpm -s typecheck && pnpm -s test: pass"
 row "" "$SCRIPT" "push, PR" "feat/todo-json pushed once, draft PR #12"

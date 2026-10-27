@@ -10,6 +10,8 @@
  * `gatherRound`), so the survival rule is checked against the owner's routing, not a hand copy.
  */
 
+import "./helpers/operatorEnv.ts";
+
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -71,9 +73,9 @@ const LEDGER = [
   "steps: none",
   "build: model=opus | agent=abuild1 | sha=abc1234",
   "freshen: skipped | base=abc1234 | sha=abc1234",
-  "wave: review-cursory, gate-silent-failure-hunter, build-verifier | repo: comment-reader | sha=abc1234",
+  "wave: review, silent-failures, completeness | repo: comment-reader | sha=abc1234",
   "fix-1: 2/4 | model=sonnet | agent=afix1 | from=abc1234 | sha=def5678",
-  "confirm-1: review-cursory (codex failed: exit 2: out dir missing), gate-silent-failure-hunter | sha=def5678",
+  "confirm-1: review (codex failed: exit 2: out dir missing), silent-failures | sha=def5678",
 ].join("\n");
 
 /**
@@ -84,13 +86,13 @@ const LEDGER = [
  */
 function writeRun(dir: string, ledger = LEDGER): void {
   writeFileSync(join(dir, "ship.md"), `${ledger}\n`);
-  writeFileSync(join(dir, "review-cursory.md"), block("CURSORY.1", "behavior", "a.ts:10"));
-  writeFileSync(join(dir, "review-cursory-2.md"), block("CURSORY-2.1", "structure", "b.ts:50"));
+  writeFileSync(join(dir, "review.md"), block("CURSORY.1", "behavior", "a.ts:10"));
+  writeFileSync(join(dir, "review-2.md"), block("CURSORY-2.1", "structure", "b.ts:50"));
   writeFileSync(
-    join(dir, "gate-silent-failure-hunter.md"),
+    join(dir, "silent-failures.md"),
     block("HUNTER.1", "behavior", "a.ts:11") + "\n" + block("HUNTER.2", "behavior", "c.ts:5")
   );
-  writeFileSync(join(dir, "build-verifier.md"), "NO FINDINGS — every deliverable checked\n");
+  writeFileSync(join(dir, "completeness.md"), "NO FINDINGS — every deliverable checked\n");
   writeFileSync(join(dir, "comment-reader.md"), "NO FINDINGS — no comment drift\n");
   writeFileSync(join(dir, "session.md"), block("SESSION.1", "behavior", "e.ts:1", { stage: "wave" }));
   writeFileSync(
@@ -111,7 +113,7 @@ function writeRun(dir: string, ledger = LEDGER): void {
   const stage = join(dir, "stage-confirm-1");
   mkdirSync(stage);
   writeFileSync(
-    join(stage, "review-cursory.md"),
+    join(stage, "review.md"),
     stageFile(
       [
         "- CURSORY.1 · resolved",
@@ -123,11 +125,11 @@ function writeRun(dir: string, ledger = LEDGER): void {
     )
   );
   writeFileSync(
-    join(stage, "gate-silent-failure-hunter.md"),
+    join(stage, "silent-failures.md"),
     stageFile(["- CURSORY.1 · resolved", "- HUNTER.2 · disagree — the catch still swallows it"], "NO FINDINGS — nothing new")
   );
   writeFileSync(join(stage, "comment-reader.md"), stageFile([], block("COMMENT.101", "text", "f.ts:2")));
-  writeFileSync(join(stage, "review-cursory-codex.refused.txt"), "codex wrote nothing usable\n");
+  writeFileSync(join(stage, "review-codex.refused.txt"), "codex wrote nothing usable\n");
 }
 
 /** `table.json` for `rounds`, built by the table script's own core. */
@@ -173,14 +175,14 @@ async function ingestRun(lookup: AgentLookup = KNOWN) {
 
 test("survived: a finding the fixer dropped and the stage reader agreed with is not survived", async () => {
   const { srcs } = await ingestRun();
-  const cursory = src(srcs, "review-cursory", "wave");
+  const cursory = src(srcs, "review", "wave");
   assert.equal(cursory.emitted, 2);
   assert.equal(cursory.survived, 1, "CURSORY-2.1 was dropped with an agree");
 });
 
 test("survived: a finding whose drop the stage reader disagreed with survives", async () => {
   const { srcs } = await ingestRun();
-  const hunter = src(srcs, "gate-silent-failure-hunter", "wave");
+  const hunter = src(srcs, "silent-failures", "wave");
   assert.equal(hunter.emitted, 2);
   assert.equal(hunter.survived, 2, "HUNTER.2's drop was disputed, so it came back as a row");
 });
@@ -189,18 +191,18 @@ test("survived: a finding whose drop the stage reader disagreed with survives", 
 
 test("a stage file counts under its stage, apart from the same reader's wave file", async () => {
   const { srcs } = await ingestRun();
-  const atStage = src(srcs, "review-cursory", "confirm-1");
+  const atStage = src(srcs, "review", "confirm-1");
   assert.equal(atStage.emitted, 1);
   assert.equal(atStage.survived, 1);
   assert.deepEqual(atStage.kinds, { behavior: 1 });
-  assert.deepEqual(src(srcs, "review-cursory", "wave").kinds, { behavior: 1, structure: 1 });
-  assert.equal(src(srcs, "gate-silent-failure-hunter", "confirm-1").emitted, 0);
+  assert.deepEqual(src(srcs, "review", "wave").kinds, { behavior: 1, structure: 1 });
+  assert.equal(src(srcs, "silent-failures", "confirm-1").emitted, 0);
 });
 
 test("a stage folder reads the root ledger's repo readers; a renamed refused file is not a source", async () => {
   const { srcs } = await ingestRun();
   assert.deepEqual(src(srcs, "comment-reader", "confirm-1").kinds, { text: 1 });
-  assert.equal(srcs.some((s) => s.source === "review-cursory-codex"), false);
+  assert.equal(srcs.some((s) => s.source === "review-codex"), false);
 });
 
 test("session.md is never a source, at the wave or anywhere", async () => {
@@ -211,25 +213,25 @@ test("session.md is never a source, at the wave or anywhere", async () => {
 
 test("collectWaveDir: a split read's slices count as one reader", async () => {
   await withTmpDir("tele-wave-", (dir) => {
-    writeFileSync(join(dir, "review-cursory-1.md"), block("CURSORY.1", "behavior", "a.ts:1"));
-    writeFileSync(join(dir, "review-cursory-2.md"), block("CURSORY-2.1", "text", "a.ts:90"));
+    writeFileSync(join(dir, "review-1.md"), block("CURSORY.1", "behavior", "a.ts:1"));
+    writeFileSync(join(dir, "review-2.md"), block("CURSORY-2.1", "text", "a.ts:90"));
     const c = collectWaveDir(dir);
-    assert.deepEqual(c.readers.get("review-cursory")?.map((f) => f.id), ["CURSORY.1", "CURSORY-2.1"]);
+    assert.deepEqual(c.readers.get("review")?.map((f) => f.id), ["CURSORY.1", "CURSORY-2.1"]);
   });
 });
 
 test("CURSORY.4: collectRun reads every drift group's folder into the drift stage", async () => {
   await withTmpDir("tele-drift-", (dir) => {
-    writeFileSync(join(dir, "review-cursory.md"), "NO FINDINGS — clean\n");
+    writeFileSync(join(dir, "review.md"), "NO FINDINGS — clean\n");
     for (const [group, id] of [[1, "CURSORY.501"], [2, "CURSORY.502"]] as const) {
       mkdirSync(join(dir, `stage-drift-${group}`));
-      writeFileSync(join(dir, `stage-drift-${group}`, "review-cursory.md"), stageFile([], block(id, "behavior", "a.ts:1")));
+      writeFileSync(join(dir, `stage-drift-${group}`, "review.md"), stageFile([], block(id, "behavior", "a.ts:1")));
     }
     mkdirSync(join(dir, "stage-drift"));
-    writeFileSync(join(dir, "stage-drift", "review-cursory.md"), stageFile([], block("CURSORY.503", "behavior", "a.ts:1")));
+    writeFileSync(join(dir, "stage-drift", "review.md"), stageFile([], block("CURSORY.503", "behavior", "a.ts:1")));
     const drift = collectRun(dir, []).filter((s) => s.stage === "drift");
     assert.equal(drift.length, 1);
-    assert.deepEqual(drift[0]!.readers.get("review-cursory")?.map((f) => f.id), ["CURSORY.501", "CURSORY.502"], "a bare stage-drift/ is no group's");
+    assert.deepEqual(drift[0]!.readers.get("review")?.map((f) => f.id), ["CURSORY.501", "CURSORY.502"], "a bare stage-drift/ is no group's");
   });
 });
 
@@ -245,7 +247,7 @@ test("collectWaveDir: a file with no blocks and no NO FINDINGS line throws namin
 test("run row: schema 2, fired across stages, rounds from the fix file and the ledger", async () => {
   const { run } = await ingestRun();
   assert.equal(run.schema, 2);
-  assert.deepEqual(run.fired, ["build-verifier", "comment-reader", "gate-silent-failure-hunter", "review-cursory"]);
+  assert.deepEqual(run.fired, ["comment-reader", "completeness", "review", "silent-failures"]);
   assert.deepEqual(run.notFired, []);
   assert.deepEqual(run.rounds, [
     { round: "1", rows: 4, fixed: 2, dropped: 2, relabelled: 0, decisions: 0, model: "sonnet", agentType: "fixer", modelIds: ["claude-sonnet-5-5"] },
@@ -281,7 +283,7 @@ test("run row: openAtEnd per kind and the leftovers come from the final round", 
 
 test("the ledger's `codex failed: <why>` token with colons and spaces ingests", async () => {
   const { run } = await ingestRun();
-  assert.ok(run.fired.includes("review-cursory"));
+  assert.ok(run.fired.includes("review"));
 });
 
 // ── meta.json ───────────────────────────────────────────────────────────────────────────────
@@ -361,7 +363,7 @@ test("metaLookup: meta.json's model wins; with none, the transcript beside it na
     writeFileSync(join(sub, "agent-a1.meta.json"), JSON.stringify({ agentType: "fixer", model: "sonnet" }));
     writeFileSync(join(sub, "agent-a2.meta.json"), JSON.stringify({ agentType: "big-boy" }));
     // A plugin agent's meta.json carries the plugin prefix; the lookup names it bare.
-    writeFileSync(join(sub, "agent-a4.meta.json"), JSON.stringify({ agentType: "agent-build:review-cursory", model: "sonnet" }));
+    writeFileSync(join(sub, "agent-a4.meta.json"), JSON.stringify({ agentType: "agent-build:review", model: "sonnet" }));
     writeFileSync(
       join(sub, "agent-a2.jsonl"),
       `${JSON.stringify({ type: "user", message: { role: "user" } })}\n${JSON.stringify({ type: "assistant", message: { model: "claude-opus-5-5" } })}\n`
@@ -370,7 +372,7 @@ test("metaLookup: meta.json's model wins; with none, the transcript beside it na
     assert.deepEqual(lookup("a1"), { agentType: "fixer", model: "sonnet", models: [] });
     assert.deepEqual(lookup("a2"), { agentType: "big-boy", model: "opus", models: ["claude-opus-5-5"] });
     assert.equal(lookup("a3"), null);
-    assert.deepEqual(lookup("a4"), { agentType: "review-cursory", model: "sonnet", models: [] });
+    assert.deepEqual(lookup("a4"), { agentType: "review", model: "sonnet", models: [] });
   });
   assert.equal(modelFamily("claude-sonnet-4-6"), "sonnet");
 });
@@ -432,24 +434,24 @@ test("readerAgents: the agent of the reader's type whose prompt names the reader
   await withTmpDir("tele-readers-", (root) => {
     const projects = join(root, "projects");
     const run = join(root, "build-1");
-    const wave = join(run, "gate-silent-failure-hunter.md");
-    const stage = join(run, "stage-confirm-1", "gate-silent-failure-hunter.md");
+    const wave = join(run, "silent-failures.md");
+    const stage = join(run, "stage-confirm-1", "silent-failures.md");
     // The first mention is a longer name; the second is the file.
-    writeAgent(projects, "w1", "gate-silent-failure-hunter", `Not ${wave}.bak.\n- Output: ${wave} — check it`, ["claude-opus-5-5"]);
+    writeAgent(projects, "w1", "silent-failures", `Not ${wave}.bak.\n- Output: ${wave} — check it`, ["claude-opus-5-5"]);
     // The stage read's prompt names the run dir (`--run-dir`) and its own file, never the wave's.
-    writeAgent(projects, "s1", "gate-silent-failure-hunter", `- Output: ${stage} — check it with --run-dir ${run}`, ["claude-sonnet-5-5", "claude-sonnet-5"]);
+    writeAgent(projects, "s1", "silent-failures", `- Output: ${stage} — check it with --run-dir ${run}`, ["claude-sonnet-5-5", "claude-sonnet-5"]);
     // Another reader's type with the same path, and a prompt naming only longer file names.
-    writeAgent(projects, "c1", "review-cursory", `- Output: ${wave}`, ["claude-sonnet-5"]);
-    writeAgent(projects, "x1", "gate-silent-failure-hunter", `renamed ${wave}.refused.txt, and ${wave}_old`, ["claude-haiku-4-5"], "session-2");
+    writeAgent(projects, "c1", "review", `- Output: ${wave}`, ["claude-sonnet-5"]);
+    writeAgent(projects, "x1", "silent-failures", `renamed ${wave}.refused.txt, and ${wave}_old`, ["claude-haiku-4-5"], "session-2");
     // A prompt given as content blocks, spelling the path from ~/ .
     const home = join(homedir(), "tele-fixture-not-real", "build-1", "simplifier.md");
     writeAgent(projects, "h1", "simplifier", [null, { type: "image" }, { type: "text", text:`Write ~/tele-fixture-not-real/build-1/simplifier.md.` }], ["claude-sonnet-5-5"]);
     // The ingest is given the run dir through a symlink; the prompt spells its real path.
     mkdirSync(join(root, "real", "build-1"), { recursive: true });
     symlinkSync(join(root, "real"), join(root, "link"));
-    const verifier = join(root, "link", "build-1", "build-verifier.md");
+    const verifier = join(root, "link", "build-1", "completeness.md");
     writeFileSync(verifier, "NO FINDINGS\n");
-    writeAgent(projects, "v1", "build-verifier", `- Output: ${realpathSync(join(root, "real"))}/build-1/build-verifier.md`, ["claude-opus-5-5"]);
+    writeAgent(projects, "v1", "completeness", `- Output: ${realpathSync(join(root, "real"))}/build-1/completeness.md`, ["claude-opus-5-5"]);
     // Noise the index must pass over: a broken meta.json, one with no agentType, one with no
     // transcript, and a session with no subagents dir.
     const sub = join(projects, "-Users-x-repo", "session-3", "subagents");
@@ -457,14 +459,14 @@ test("readerAgents: the agent of the reader's type whose prompt names the reader
     writeFileSync(join(sub, "agent-bad.meta.json"), "{");
     writeFileSync(join(sub, "agent-null.meta.json"), "null");
     writeFileSync(join(sub, "agent-untyped.meta.json"), JSON.stringify({ description: "x" }));
-    writeFileSync(join(sub, "agent-bare.meta.json"), JSON.stringify({ agentType: "build-verifier" }));
+    writeFileSync(join(sub, "agent-bare.meta.json"), JSON.stringify({ agentType: "completeness" }));
     mkdirSync(join(projects, "-Users-x-repo", "session-4"));
     const lookup = metaLookup(projects);
-    assert.deepEqual(lookup.readerAgents!("gate-silent-failure-hunter", wave), [{ id: "w1", models: ["claude-opus-5-5"] }]);
-    assert.deepEqual(lookup.readerAgents!("gate-silent-failure-hunter", stage), [{ id: "s1", models: ["claude-sonnet-5-5", "claude-sonnet-5"] }]);
+    assert.deepEqual(lookup.readerAgents!("silent-failures", wave), [{ id: "w1", models: ["claude-opus-5-5"] }]);
+    assert.deepEqual(lookup.readerAgents!("silent-failures", stage), [{ id: "s1", models: ["claude-sonnet-5-5", "claude-sonnet-5"] }]);
     assert.deepEqual(lookup.readerAgents!("simplifier", home), [{ id: "h1", models: ["claude-sonnet-5-5"] }]);
-    assert.deepEqual(lookup.readerAgents!("build-verifier", verifier), [{ id: "v1", models: ["claude-opus-5-5"] }]);
-    assert.deepEqual(lookup.readerAgents!("security-review", join(run, "security-review.md")), []);
+    assert.deepEqual(lookup.readerAgents!("completeness", verifier), [{ id: "v1", models: ["claude-opus-5-5"] }]);
+    assert.deepEqual(lookup.readerAgents!("security", join(run, "security.md")), []);
   });
 });
 
@@ -492,32 +494,32 @@ test("ingest over metaLookup: each wave and stage reader row records its agents'
     writeRun(dir);
     buildTable(dir, ["1", "2"]);
     // A Codex read has no Claude transcript: no field, no note.
-    writeFileSync(join(dir, "review-cursory-codex.md"), "NO FINDINGS — clean\n");
+    writeFileSync(join(dir, "review-codex.md"), "NO FINDINGS — clean\n");
     const at = (f: string) => `- Output: ${join(dir, f)} — check it`;
-    writeAgent(projects, "cur1", "review-cursory", at("review-cursory.md"), ["claude-sonnet-5-5"]);
-    writeAgent(projects, "cur2", "review-cursory", at("review-cursory-2.md"), ["claude-sonnet-5"]);
-    writeAgent(projects, "hw", "gate-silent-failure-hunter", at("gate-silent-failure-hunter.md"), ["claude-opus-5-5"]);
-    writeAgent(projects, "hs", "gate-silent-failure-hunter", `${at("stage-confirm-1/gate-silent-failure-hunter.md")} --run-dir ${dir}`, [
+    writeAgent(projects, "cur1", "review", at("review.md"), ["claude-sonnet-5-5"]);
+    writeAgent(projects, "cur2", "review", at("review-2.md"), ["claude-sonnet-5"]);
+    writeAgent(projects, "hw", "silent-failures", at("silent-failures.md"), ["claude-opus-5-5"]);
+    writeAgent(projects, "hs", "silent-failures", `${at("stage-confirm-1/silent-failures.md")} --run-dir ${dir}`, [
       "claude-sonnet-5-5",
       "claude-sonnet-5",
     ]);
-    writeAgent(projects, "cs", "review-cursory", at("stage-confirm-1/review-cursory.md"), ["claude-sonnet-5-5"]);
+    writeAgent(projects, "cs", "review", at("stage-confirm-1/review.md"), ["claude-sonnet-5-5"]);
     writeAgent(projects, "cr", "comment-reader", at("comment-reader.md"), ["claude-haiku-4-5"]);
     writeAgent(projects, "crs", "comment-reader", at("stage-confirm-1/comment-reader.md"), ["claude-haiku-4-5"]);
     writeFileSync(join(dir, EXTRA_SOURCES_FILE), JSON.stringify({ "prior-art": { emitted: 1, survived: 1 } }));
     const { srcs, notes } = ingest(dir, META, join(dir, "log.jsonl"), metaLookup(projects));
     const ids = (source: string, stage: string | null) => src(srcs, source, stage).modelIds;
-    assert.deepEqual(ids("review-cursory", "wave"), ["claude-sonnet-5", "claude-sonnet-5-5"], "a split read's slices, in file-name order");
-    assert.deepEqual(ids("gate-silent-failure-hunter", "wave"), ["claude-opus-5-5"]);
-    assert.deepEqual(ids("gate-silent-failure-hunter", "confirm-1"), ["claude-sonnet-5-5", "claude-sonnet-5"]);
-    assert.deepEqual(ids("review-cursory", "confirm-1"), ["claude-sonnet-5-5"]);
+    assert.deepEqual(ids("review", "wave"), ["claude-sonnet-5", "claude-sonnet-5-5"], "a split read's slices, in file-name order");
+    assert.deepEqual(ids("silent-failures", "wave"), ["claude-opus-5-5"]);
+    assert.deepEqual(ids("silent-failures", "confirm-1"), ["claude-sonnet-5-5", "claude-sonnet-5"]);
+    assert.deepEqual(ids("review", "confirm-1"), ["claude-sonnet-5-5"]);
     assert.deepEqual(ids("comment-reader", "confirm-1"), ["claude-haiku-4-5"]);
-    assert.deepEqual(ids("build-verifier", "wave"), [], "no agent found records []");
-    assert.equal("modelIds" in src(srcs, "review-cursory-codex", "wave"), false);
+    assert.deepEqual(ids("completeness", "wave"), [], "no agent found records []");
+    assert.equal("modelIds" in src(srcs, "review-codex", "wave"), false);
     assert.equal("modelIds" in src(srcs, "prior-art", null), false);
     assert.deepEqual(notes.filter((n) => /^note: reader /.test(n)), [
-      "note: reader build-verifier.md: no build-verifier agent's prompt names this file — its model is unknown",
-      "note: reader stage-confirm-1/gate-silent-failure-hunter.md agent hs: ran more than one model — claude-sonnet-5-5, claude-sonnet-5",
+      "note: reader completeness.md: no completeness agent's prompt names this file — its model is unknown",
+      "note: reader stage-confirm-1/silent-failures.md agent hs: ran more than one model — claude-sonnet-5-5, claude-sonnet-5",
     ]);
   });
 });
@@ -541,7 +543,7 @@ test("an old run dir (round.json, no table.json) exits 1 with the flow: 2 messag
   await withTmpDir("tele-old-", async (dir) => {
     // A flow-2 ledger, so only the round.json rule can refuse it.
     writeFileSync(join(dir, "ship.md"), `${LEDGER}\n`);
-    writeFileSync(join(dir, "review-cursory.md"), "NO FINDINGS\n");
+    writeFileSync(join(dir, "review.md"), "NO FINDINGS\n");
     writeFileSync(join(dir, "round.json"), "{}");
     const err: string[] = [];
     let code = -1;
@@ -557,7 +559,7 @@ test("an old run dir (round.json, no table.json) exits 1 with the flow: 2 messag
 
 test("an old ledger beside a table.json also exits 1 with the flow: 2 message", async () => {
   await withTmpDir("tele-old-", async (dir) => {
-    writeFileSync(join(dir, "ship.md"), "class: R1 — operator, 2026-09-20\nwave: review-cursory | sha=abc1234\n");
+    writeFileSync(join(dir, "ship.md"), "class: R1 — operator, 2026-09-20\nwave: review | sha=abc1234\n");
     writeFileSync(join(dir, "table.json"), JSON.stringify({ schema: 2, rounds: {} }));
     let code = -1;
     const err: string[] = [];
@@ -577,20 +579,20 @@ test("extra sources: parsed and validated, and each is a source row with no stag
     assert.equal(readExtraSources(dir).size, 0);
     writeRun(dir);
     buildTable(dir, ["1"]);
-    writeFileSync(join(dir, EXTRA_SOURCES_FILE), JSON.stringify({ "test-author": { emitted: 1, survived: 1 } }));
+    writeFileSync(join(dir, EXTRA_SOURCES_FILE), JSON.stringify({ "write-tests": { emitted: 1, survived: 1 } }));
     const { run, srcs } = ingest(dir, META, join(dir, "log.jsonl"), KNOWN);
-    assert.deepEqual(src(srcs, "test-author", null), {
+    assert.deepEqual(src(srcs, "write-tests", null), {
       kind: "src",
       schema: 2,
       runId: "run-1",
-      source: "test-author",
+      source: "write-tests",
       stage: null,
       type: "reader",
       emitted: 1,
       survived: 1,
       kinds: {},
     });
-    assert.equal(run.fired.at(-1), "test-author");
+    assert.equal(run.fired.at(-1), "write-tests");
   });
 });
 
@@ -658,26 +660,26 @@ test("report: an old row in the log does not break --report; it prints in a lega
     { kind: "run", ts: "2026-07-08T00:00:00Z", runId: "lane", pipeline: "diff-review", fired: [], notFired: [] },
     { kind: "run", ts: "2026-09-20T00:00:00Z", runId: "old", pipeline: "build", cls: "R2", round: { applied: 3, unresolvedAfterRound: 1, regressionsAtConfirm: { count: 1, worst: "FIX" }, revertedTrivial: 0 } },
     { kind: "run", ts: "2026-09-21T00:00:00Z", runId: "odd", cls: "R1", round: { applied: 1 } },
-    { kind: "src", runId: "old", source: "review-cursory", type: "reader", emitted: 4, survived: 4, tiers: { blocker: 1, high: 2, medium: 0, low: 1 } },
+    { kind: "src", runId: "old", source: "review", type: "reader", emitted: 4, survived: 4, tiers: { blocker: 1, high: 2, medium: 0, low: 1 } },
     { kind: "src", runId: "odd", source: "simplifier", type: "reader", emitted: 2 },
     { kind: "src", runId: "old", source: "backstop", type: "backstop", emitted: 9, survived: 9 },
     v2Run("new"),
-    v2Src("new", "review-cursory-codex", "wave", 3),
-    v2Src("new", "review-cursory-codex", "confirm-1", 1),
+    v2Src("new", "review-codex", "wave", 3),
+    v2Src("new", "review-codex", "confirm-1", 1),
   ] as TelemetryRow[];
   const text = formatReport(rows);
   assert.match(text, /^reviewTelemetry: 1 run\(s\) \(1 R2\)/);
-  assert.match(text, /review-cursory-codex\s+wave\s+1\s+3\s+3\s+3\.00\s+behavior 3/);
-  assert.match(text, /review-cursory-codex\s+confirm-1\s+1\s+1\s+1/);
+  assert.match(text, /review-codex\s+wave\s+1\s+3\s+3\s+3\.00\s+behavior 3/);
+  assert.match(text, /review-codex\s+confirm-1\s+1\s+1\s+1/);
   assert.match(text, /new R2: build opus\/builder · 1: 3 rows, 2 fixed, 1 dropped, 0 relabelled, 0 decisions, opus\/fixer · open none · leftovers 2/);
   assert.match(text, /^legacy .*: 2 run\(s\) \(1 R1, 1 R2\)/m);
-  assert.match(text, /review-cursory\s+1\s+4\s+4\s+4\.00\s+1\/2\/1/);
+  assert.match(text, /review\s+1\s+4\s+4\s+4\.00\s+1\/2\/1/);
   assert.match(text, /simplifier\s+1\s+2\s+0\s+0\.00\s+0\/0\/0/);
   assert.match(text, /old R2: applied 3, unresolved 1, regressions 1 \(worst FIX\)/);
   assert.match(text, /odd R1: applied 1, unresolved 0, regressions 0, reverted-trivial 0/);
   assert.match(text, /runs with a BLOCK\/FIX regression at confirm: 1\/2/);
   assert.doesNotMatch(text, /backstop|lane/);
-  assert.match(text, /review-cursory-codex\s+wave\s+1\s+3\s+3\s+3\.00\s+behavior 3\s+\?$/m, "a row with no modelIds reads as ?");
+  assert.match(text, /review-codex\s+wave\s+1\s+3\s+3\s+3\.00\s+behavior 3\s+\?$/m, "a row with no modelIds reads as ?");
   assert.doesNotMatch(text, /by model/, "one model (?) per source: nothing to split");
 });
 
@@ -689,28 +691,28 @@ test("report: full ids per source and per run; a source whose fires ran differen
   // Log order is first-seen order; `old`'s rows, written before modelIds, read as `?`.
   const rows: TelemetryRow[] = [
     newer,
-    withIds(v2Src("new", "security-review", "wave", 1), ["claude-sonnet-5-5"]),
-    withIds(v2Src("new", "review-cursory", "wave", 2), ["claude-sonnet-5-5", "claude-sonnet-5"]),
-    withIds(v2Src("new", "build-verifier", "wave", 1), []),
+    withIds(v2Src("new", "security", "wave", 1), ["claude-sonnet-5-5"]),
+    withIds(v2Src("new", "review", "wave", 2), ["claude-sonnet-5-5", "claude-sonnet-5"]),
+    withIds(v2Src("new", "completeness", "wave", 1), []),
     { ...v2Run("newer"), build: { model: "opus", agentType: "builder", modelIds: [] } },
-    withIds(v2Src("newer", "security-review", "wave", 2), ["claude-sonnet-5-5"]),
-    v2Src("newer", "review-cursory", "wave", 3),
+    withIds(v2Src("newer", "security", "wave", 2), ["claude-sonnet-5-5"]),
+    v2Src("newer", "review", "wave", 3),
     v2Run("old"),
-    v2Src("old", "security-review", "wave", 4),
+    v2Src("old", "security", "wave", 4),
   ];
   const text = formatReport(rows);
-  assert.match(text, /security-review\s+wave\s+3\s+7\s+7\s+2\.33\s+behavior 7\s+claude-sonnet-5-5 \(2\), \? \(1\)$/m);
-  assert.match(text, /review-cursory\s+wave\s+2\s+5\s+5\s+2\.50\s+behavior 5\s+claude-sonnet-5-5\+claude-sonnet-5 \(1\), \? \(1\)$/m);
-  assert.match(text, /build-verifier\s+wave\s+1\s+1\s+1\s+1\.00\s+behavior 1\s+\?$/m, "an empty modelIds reads as ?");
+  assert.match(text, /security\s+wave\s+3\s+7\s+7\s+2\.33\s+behavior 7\s+claude-sonnet-5-5 \(2\), \? \(1\)$/m);
+  assert.match(text, /review\s+wave\s+2\s+5\s+5\s+2\.50\s+behavior 5\s+claude-sonnet-5-5\+claude-sonnet-5 \(1\), \? \(1\)$/m);
+  assert.match(text, /completeness\s+wave\s+1\s+1\s+1\s+1\.00\s+behavior 1\s+\?$/m, "an empty modelIds reads as ?");
   // Grouped by source; within one, the models in the order first seen (not by per-fire or by name).
   const split = aggregateByModel(rows, reportRuns(rows)).map((s) => [s.source, s.stage, s.models[0]!.model, s.fires, s.survived]);
   assert.deepEqual(split, [
-    ["review-cursory", "wave", "claude-sonnet-5-5+claude-sonnet-5", 1, 2],
-    ["review-cursory", "wave", "?", 1, 3],
-    ["security-review", "wave", "claude-sonnet-5-5", 2, 3],
-    ["security-review", "wave", "?", 1, 4],
+    ["review", "wave", "claude-sonnet-5-5+claude-sonnet-5", 1, 2],
+    ["review", "wave", "?", 1, 3],
+    ["security", "wave", "claude-sonnet-5-5", 2, 3],
+    ["security", "wave", "?", 1, 4],
   ]);
-  assert.match(text, /^by model .*\nsource\s+stage\s+model\s+fires.*\nreview-cursory\s+wave\s+claude-sonnet-5-5\+claude-sonnet-5\s+1\s+2\s+2\s+2\.00/m);
+  assert.match(text, /^by model .*\nsource\s+stage\s+model\s+fires.*\nreview\s+wave\s+claude-sonnet-5-5\+claude-sonnet-5\s+1\s+2\s+2\s+2\.00/m);
   assert.match(text, /new R2: build opus\/builder \(claude-opus-5-5\) · 1: 3 rows, .*, opus\/fixer \(claude-opus-5-5, claude-opus-4-8\) ·/);
   assert.match(text, /old R2: build opus\/builder · 1: 3 rows, .*, opus\/fixer · open none/, "a run row with no ids prints as before");
   assert.match(text, /newer R2: build opus\/builder · /, "an empty modelIds prints no brackets");

@@ -1,0 +1,61 @@
+{
+  "status": "initial",
+  "report": "initial classifiers report (2026-10-22): an initial setup, sanity-checked on 15 recorded runs, not tuned; combined by maximum since 2026-10-23 (graph tune plan, unit A), so a sweep-only brief fires alone: max 1.0 less the small-size feature 0.3 is 0.7, above the cut-off",
+  "model": "jev-1.14.0",
+  "cutoff": 0.5,
+  "combine": "max",
+  "fields": {
+    "brief": {
+      "input": "brief",
+      "maxChars": 60000,
+      "note": {
+        "field": "brief_note",
+        "text": "the build brief, the plan the builders were given"
+      },
+      "keep": [
+        "Deliverables",
+        "Parts",
+        "Target files"
+      ]
+    }
+  },
+  "questions": {
+    "deliverables_listed": {
+      "type": "score",
+      "instructions": "Count the deliverables the brief lists, in its deliverables, target files, or parts sections: each file to create or change, command, function, config key, migration, document, or test, one item per line. About how many are there?",
+      "criteria": [
+        "Ten or fewer.",
+        "Eleven to twenty.",
+        "Twenty-one to forty.",
+        "Forty-one to eighty.",
+        "More than eighty."
+      ]
+    },
+    "sweep_or_removal": {
+      "type": "noul",
+      "instructions": "Does the brief require a sweep or a removal: a name, phrase, file, or setting that must be gone everywhere, a rename across many files, or a wording that must change at every place it appears?",
+      "criteria": {
+        "true": "The brief requires that something be removed, renamed, or reworded at every place it appears, across several files.",
+        "false": "The brief names the places to change one by one, with no sweep, removal, or rename across the repo."
+      }
+    },
+    "parts_listed": {
+      "type": "score",
+      "instructions": "How many parts, slices, or separately numbered units of work does the brief split the work into?",
+      "criteria": [
+        "No split: one unit of work.",
+        "Two.",
+        "Three or four.",
+        "Five to eight.",
+        "More than eight."
+      ]
+    }
+  },
+  "features": [
+    {
+      "input": "size-report",
+      "pattern": "\"counted\":\\s*(?:\\d{1,2}|1\\d\\d|2[0-4]\\d)(?!\\d)",
+      "weight": -0.3
+    }
+  ]
+}

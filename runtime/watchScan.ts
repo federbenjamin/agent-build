@@ -321,7 +321,7 @@ export type WatchLimitKey =
   | "WATCH_OFF_PART_FILES";
 
 /** Agent types the `no-edit` flag watches (the part after a plugin prefix `x:`). */
-export const EDIT_BEARING = new Set(["builder", "fixer", "test-author"]);
+export const EDIT_BEARING = new Set(["builder", "fixer", "write-tests"]);
 
 export interface WatchedAgent {
   name: string;

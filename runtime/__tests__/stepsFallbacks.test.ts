@@ -1,5 +1,7 @@
 /** The fallbacks a repo with no build steps runs on: install and tests from its package files, a push of a fresh branch by name, a PR opened with
  *  SHIP's body, and a merge that reaches the base branch whether or not the repo allows auto-merge. */
+import "./helpers/operatorEnv.ts";
+
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";

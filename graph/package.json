@@ -1,0 +1,34 @@
+{
+  "name": "agent-build-graph",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "build-graph": "./cli.ts"
+  },
+  "scripts": {
+    "build-graph": "node cli.ts",
+    "test": "node --test \"__tests__/*.test.ts\"",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "dependencies": {
+    "@temporalio/activity": "~1.24.0",
+    "@temporalio/client": "~1.24.0",
+    "@temporalio/common": "~1.24.0",
+    "@temporalio/worker": "~1.24.0",
+    "@temporalio/workflow": "~1.24.0"
+  },
+  "devDependencies": {
+    "@temporalio/testing": "~1.24.0",
+    "@types/node": "^24.19.2",
+    "typescript": "^7.0.2"
+  },
+  "pnpm": {
+    "ignoredBuiltDependencies": [
+      "@swc/core",
+      "protobufjs"
+    ]
+  }
+}

@@ -1,4 +1,6 @@
 /** The neutral publishing defaults: state roots, contract thresholds, and an opt-in session log. */
+import "./helpers/operatorEnv.ts";
+
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";

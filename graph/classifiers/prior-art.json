@@ -1,0 +1,45 @@
+{
+  "status": "judgment",
+  "report": "initial classifiers report (2026-10-22): an initial setup, sanity-checked on 15 recorded runs; cut-off 0.15 since 2026-10-23 (graph tune plan, unit A), a cost judgment, not a fit: a missed prior-art read costs a duplicate implementation, a wasted one a short read, and its reader writes no table rows, so no run can label it and it is never explored",
+  "model": "jev-1.14.0",
+  "cutoff": 0.15,
+  "combine": "mean",
+  "fields": {
+    "request": {
+      "input": "start",
+      "maxChars": 12000
+    },
+    "ticket": {
+      "input": "ticket",
+      "optional": true,
+      "maxChars": 12000
+    }
+  },
+  "questions": {
+    "asks_for_new_artifact": {
+      "type": "noul",
+      "instructions": "Read only the request, and its ticket when there is one. Does it ask for something new to exist, such as a new file, module, script, command, component, exported function or type, or a new kind of record, rather than only edits inside things that already exist?",
+      "criteria": {
+        "true": "The request asks for at least one new named thing to be created.",
+        "false": "The request asks only for fixes, edits, renames, wording, or configuration changes inside things that already exist."
+      }
+    },
+    "sits_beside_siblings": {
+      "type": "noul",
+      "instructions": "Read only the request, and its ticket when there is one. Is the new thing one more of a kind a program usually has several of, such as another command beside existing commands, another parser, check, handler, field, flag, or table row, so that code doing a similar job may already exist elsewhere in the repo?",
+      "criteria": {
+        "true": "The requested thing is another instance of a kind the codebase probably already has, or it needs a helper that likely exists already.",
+        "false": "The request asks for no new thing, or for a thing unlike anything a codebase of this kind would already hold."
+      }
+    },
+    "adds_capability": {
+      "type": "noul",
+      "instructions": "Read only the request, and its ticket when there is one. Does it add a new behavior or capability, something the program cannot do today, rather than fixing a defect, changing wording, removing code, or adjusting a value?",
+      "criteria": {
+        "true": "The request adds something the program cannot do today: a new behavior, command, option, field, or check.",
+        "false": "The request only fixes a defect, changes wording or a value, removes code, or restructures what is already there."
+      }
+    }
+  },
+  "features": []
+}

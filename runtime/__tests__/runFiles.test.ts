@@ -1,7 +1,9 @@
 /**
  * The run dir's file grammars (lib/runFiles.ts): the finding block and its locator, session.md, the
- * stage file, the fix file, the hand-test file, and table.json.
+ * stage file, the hand-test file, and table.json.
  */
+
+import "./helpers/operatorEnv.ts";
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -15,7 +17,6 @@ import {
   normaliseKind,
   normaliseLocator,
   parseFindingBlock,
-  parseFixFile,
   parseHandTestFile,
   parseReaderFile,
   parseSessionFile,
@@ -23,13 +24,13 @@ import {
   parseStageKey,
   parseTableJson,
   parseVerdict,
-  RunFileError,
   serialiseTableJson,
   splitFindingId,
   stageIdRange,
   STAGES_FIXING,
   type TableJson,
 } from "../lib/runFiles.ts";
+import { refuses } from "./helpers/refuses.ts";
 
 function block(id: string, fields: Record<string, string>, title = "a title"): string {
   return [`### ${id} — ${title}`, ...Object.entries(fields).map(([k, v]) => `- ${k}: ${v}`)].join("\n");
@@ -41,15 +42,6 @@ const BASE = {
   finding: "a 401 retries forever; trigger: sign out, then send.",
   after: "a 4xx ends the loop after one try.",
 };
-
-/** Assert `fn` throws a RunFileError whose message matches `re`. */
-function refuses(fn: () => unknown, re: RegExp): void {
-  assert.throws(fn, (e: unknown) => {
-    assert.ok(e instanceof RunFileError, `expected RunFileError, got ${String(e)}`);
-    assert.match(e.message, re);
-    return true;
-  });
-}
 
 // ── Finding block ───────────────────────────────────────────────────────────────────────────
 
@@ -406,55 +398,13 @@ test("parseStageFile: `- none` with no rows given; missing sections and an empty
   refuses(() => parseStageFile(stageFile(["- none"], "looked, fine"), { stage: "drift" }), /`## New` holds no finding block and no line starting `NO FINDINGS`/);
 });
 
-test("parseStageFile: build-verifier must end with a VERDICT line; both forms parse", () => {
+test("parseStageFile: completeness must end with a VERDICT line; both forms parse", () => {
   const body = stageFile(["- none"], "NO FINDINGS");
-  refuses(() => parseStageFile(body, { stage: "confirm-1", reader: "build-verifier" }), /build-verifier ends with `VERDICT: CLEAN`/);
-  assert.deepEqual(parseStageFile(`${body}\n\nVERDICT: CLEAN\n`, { stage: "confirm-1", reader: "build-verifier" }).verdict, { verdict: "CLEAN" });
+  refuses(() => parseStageFile(body, { stage: "confirm-1", reader: "completeness" }), /completeness ends with `VERDICT: CLEAN`/);
+  assert.deepEqual(parseStageFile(`${body}\n\nVERDICT: CLEAN\n`, { stage: "confirm-1", reader: "completeness" }).verdict, { verdict: "CLEAN" });
   assert.deepEqual(parseVerdict("x\nVERDICT: INCOMPLETE — check 2 exercise blocked"), { verdict: "INCOMPLETE", check: "check 2 exercise blocked" });
   refuses(() => parseVerdict("VERDICT: BLOCKED-INCOMPLETE — env"), /`VERDICT: CLEAN` or `VERDICT: INCOMPLETE — <check>`/);
   assert.equal(parseVerdict("no verdict here"), null);
-});
-
-// ── Fix file ────────────────────────────────────────────────────────────────────────────────
-
-const EXIT = [
-  "exit checks:",
-  "vacuity: CURSORY.3 — node --test … → vacuity input fails, invariant holds",
-  "mutation: pnpm exec tsx scripts/mutationProof.ts map.json → 3/3 BINDING",
-  "branches: send.ts:44 (4xx) → send.test.ts \"stops on 401\"",
-  "shared function: none",
-];
-
-const FIX_EXAMPLE = [
-  "CURSORY.3 · fixed · 4f1c2a9 — 4xx ends the loop; test send.test.ts \"stops on 401\"",
-  "HUNTER.2 · fixed · 4f1c2a9 · kind=security — the swallowed 409 now maps to the taxonomy",
-  "SIMP.2 · dropped — chat.ts:30 already delegates to formatDraft; no second copy",
-  "CODEX.4 · relabel structure→text — the finding is the comment on line 12, not the shape",
-  "VERIFIER.1 · decision — brief — deliverable 4 names a file the design moved; brief must change",
-  "HAND.2 · fixed · 7a0b3c1 — the empty reply now renders the retry row",
-  ...EXIT,
-].join("\n");
-const FIX_ROWS = ["CURSORY.3", "HUNTER.2", "SIMP.2", "CODEX.4", "VERIFIER.1", "HAND.2"];
-
-test("parseFixFile: the spec's example parses, one line of each form", () => {
-  const f = parseFixFile(FIX_EXAMPLE, { rows: FIX_ROWS, round: "2" });
-  assert.deepEqual(f.lines.map((l) => [l.row, l.action]), FIX_ROWS.map((r, i) => [r, ["fixed", "fixed", "dropped", "relabel", "decision", "fixed"][i]]));
-  assert.deepEqual(f.lines[0], { row: "CURSORY.3", line: 1, action: "fixed", sha: "4f1c2a9", what: "4xx ends the loop; test send.test.ts \"stops on 401\"" });
-  assert.deepEqual(f.lines[1], { row: "HUNTER.2", line: 2, action: "fixed", sha: "4f1c2a9", kind: "security", what: "the swallowed 409 now maps to the taxonomy" });
-  assert.deepEqual(f.lines[2], { row: "SIMP.2", line: 3, action: "dropped", reason: "chat.ts:30 already delegates to formatDraft; no second copy" });
-  assert.deepEqual(f.lines[3], { row: "CODEX.4", line: 4, action: "relabel", from: "structure", to: "text", reason: "the finding is the comment on line 12, not the shape" });
-  assert.deepEqual(f.lines[4], { row: "VERIFIER.1", line: 5, action: "decision", which: "brief", question: "deliverable 4 names a file the design moved; brief must change" });
-  assert.equal(f.exitChecks["shared function"], "none");
-  assert.equal(f.exitChecks.branches, "send.ts:44 (4xx) → send.test.ts \"stops on 401\"");
-});
-
-test("TEXT-CURSORY.11: parseFixFile reads `<ROW> · blocked — <evidence>`, the line for a row the fixer could not fix", () => {
-  const f = parseFixFile(`CURSORY.3 · blocked — three fixes failed tsc on send.ts:40\nexit checks:\nvacuity: none\nmutation: none\nbranches: none\nshared function: none\n`, {
-    rows: ["CURSORY.3"],
-    round: "2",
-  });
-  assert.deepEqual(f.lines[0], { row: "CURSORY.3", line: 1, action: "blocked", reason: "three fixes failed tsc on send.ts:40" });
-  refuses(() => parseFixFile("CURSORY.3 · blocked\nexit checks:\n"), /not a fix line/);
 });
 
 test("CURSORY.4: a drift group's round is `drift-<n>`; a bare `drift` round id is refused", () => {
@@ -467,38 +417,6 @@ test("CURSORY.4: a drift group's round is `drift-<n>`; a bare `drift` round id i
   refuses(() => parseTableJson(JSON.stringify({ schema: 2, rounds: { drift: TABLE.rounds["1"] } })), /table\.json rounds\.drift: expected a round id/);
   assert.deepEqual(parseStageKey("drift-confirm-2"), { stage: "drift-confirm", group: 2, key: "drift-confirm-2", folder: "stage-drift-confirm-2" });
   assert.equal(parseStageKey("drift"), null);
-});
-
-test("parseFixFile: a fix file without `branches:` is refused", () => {
-  const text = FIX_EXAMPLE.split("\n").filter((l) => !l.startsWith("branches:")).join("\n");
-  refuses(() => parseFixFile(text), /missing exit check `branches:`/);
-});
-
-test("parseFixFile: no `exit checks:` block is refused", () => {
-  refuses(() => parseFixFile(FIX_EXAMPLE.split("\nexit checks:")[0]!), /missing `exit checks:` and its four lines/);
-});
-
-test("parseFixFile: a `fixed` line with no sha is refused", () => {
-  refuses(() => parseFixFile(["CURSORY.3 · fixed — stops on 4xx", ...EXIT].join("\n")), /line 1: CURSORY\.3: a `fixed` line .* the sha is missing/);
-});
-
-test("parseFixFile: an unknown decision kind is refused", () => {
-  refuses(() => parseFixFile(["VERIFIER.1 · decision — taste — which name?", ...EXIT].join("\n")), /decision `taste` is not one of brief \| public-surface/);
-});
-
-test("parseFixFile: a row missing and a row not in the table are refused", () => {
-  refuses(() => parseFixFile(FIX_EXAMPLE, { rows: [...FIX_ROWS, "SEC.1"] }), /SEC\.1: row has no line/);
-  refuses(() => parseFixFile(FIX_EXAMPLE, { rows: FIX_ROWS.slice(1) }), /line 1: CURSORY\.3: not a row of this round's table/);
-});
-
-test("parseFixFile: a relabel to a kind the round still fixes is refused; that is `fixed · kind=`", () => {
-  refuses(() => parseFixFile(["CODEX.4 · relabel text→behavior — it is logic", ...EXIT].join("\n"), { round: "2" }), /round 2 fixes `behavior`; fix the row and write `fixed · <sha> · kind=behavior`/);
-  assert.equal(parseFixFile(["CODEX.4 · relabel structure→text — prose", ...EXIT].join("\n"), { round: "2" }).lines[0]!.action, "relabel");
-});
-
-test("parseFixFile: a stray line and an unknown kind= are refused", () => {
-  refuses(() => parseFixFile(["I fixed things", ...EXIT].join("\n")), /line 1: not a fix line/);
-  refuses(() => parseFixFile(["CODEX.4 · fixed · 4f1c2a9 · kind=perf — x", ...EXIT].join("\n")), /`kind=perf` is not one of/);
 });
 
 // ── Hand-test file ──────────────────────────────────────────────────────────────────────────
@@ -550,8 +468,8 @@ const TABLE: TableJson = {
       leftovers: [{ advice: { locator: "docs/x.md:3", text: "stale" }, reason: "prose drift" }],
       banked: [],
       closed: [],
-      consumed: ["review-cursory.md", "session.md"],
-      refused: [{ file: "security-review.md", error: "line 3: finding SEC.1: missing `kind`" }],
+      consumed: ["review.md", "session.md"],
+      refused: [{ file: "security.md", error: "line 3: finding SEC.1: missing `kind`" }],
     },
     final: {
       head: "8e2d0b1",

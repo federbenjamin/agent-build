@@ -1,10 +1,10 @@
 flowchart LR
     subgraph wave ["Wave readers"]
         direction TB
-        cur["review-cursory"]
-        ver["build-verifier"]
+        cur["review"]
+        ver["completeness"]
         hunt["silent-failure-<br/>hunter: R1+"]
-        sec["security-review:<br/>R2"]
+        sec["security:<br/>R2"]
         simp["simplifier:<br/>size M+"]
         codex["Codex pair:<br/>M+ and R1+"]
         cur ~~~ ver ~~~ hunt ~~~ sec ~~~ simp ~~~ codex
@@ -22,7 +22,7 @@ flowchart LR
     subgraph reread ["After each fix"]
         direction TB
         confirm["fresh readers"]
-        hand["hand-tester"]
+        hand["hand-test"]
         confirm ~~~ hand
     end
 

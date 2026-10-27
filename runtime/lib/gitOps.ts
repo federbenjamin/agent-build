@@ -24,6 +24,8 @@ export interface RunOpts {
   cwd?: string;
   /** Kill the subprocess after this many ms (execFileSync then throws). */
   timeout?: number;
+  /** The subprocess's environment; defaults to ours. */
+  env?: NodeJS.ProcessEnv;
   /** Test seam: replaces the real execFileSync-backed runner. */
   exec?: ExecFn;
   /** Stream stdio to ours instead of capturing (inherit-mode helpers set this). */
@@ -47,6 +49,7 @@ export type ExecFn = (cmd: string, args: string[], opts: RunOpts) => string;
 export function buildExecOptions(opts: RunOpts): ExecFileSyncOptionsWithStringEncoding {
   return {
     cwd: opts.cwd ?? process.cwd(),
+    ...(opts.env !== undefined ? { env: opts.env } : {}),
     encoding: opts.encoding ?? "utf8",
     stdio: opts.inherit
       ? "inherit"

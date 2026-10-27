@@ -1,0 +1,10 @@
+{
+  "graph": "./toy.ts",
+  "agent": { "adapter": "stub", "fixtureDir": "./toy-fixtures" },
+  "classifier": {
+    "adapter": "stub",
+    "answers": { "needs-review": { "answer": "yes", "p": 0.8 } },
+    "default": { "answer": "no", "p": 0.5 }
+  },
+  "check": { "adapter": "stub", "answers": { "tests": ["fail", "pass"] }, "default": "pass" }
+}

@@ -14,9 +14,9 @@ import { stepCommand } from "./steps.ts";
 export type SizeBucket = { name: string; min: number };
 
 export const DEFAULTS = {
-  /** gate-silent-failure-hunter sits out under this many counted lines when no hunk has catch/await/Promise. */
+  /** silent-failures sits out under this many counted lines when no hunk has catch/await/Promise. */
   WAVE_HUNTER_MIN_LINES: 20,
-  /** review-cursory runs as two spawns with exclusive slices above this many counted lines. */
+  /** review runs as two spawns with exclusive slices above this many counted lines. */
   WAVE_CURSORY_SPLIT_LINES: 800,
   /** The simplifier fires by size at or above this bucket. */
   SIMPLIFIER_TRIGGER_MIN_BUCKET: "M",

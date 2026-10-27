@@ -28,10 +28,6 @@ import {
 } from "../../lib/runFiles.ts";
 import { buildRound } from "../../lib/table.ts";
 
-// Strip inherited GIT_* before anything spawns git (docs/rules/tests.md §Tests): an inherited
-// GIT_DIR (a hook) would point both these repos and the runtime's own git calls at another repo.
-for (const k of Object.keys(process.env)) if (k.startsWith("GIT_")) delete process.env[k];
-
 export const FAKE_ARM = `import { readFileSync } from "node:fs";
 const [arm, file] = process.argv.slice(2);
 if (arm !== "--app-code" && arm !== "--fix-security") {
@@ -252,8 +248,8 @@ export function stageFile(status: string[], blocks: string[] = []): string {
 /** The wave's two files for `briefedHead`'s wave line: a cursory read holding `blocks`, and a clean
  *  verifier. */
 export function waveFiles(run: Run, blocks: string[] = []): void {
-  run.write("review-cursory.md", blocks.length === 0 ? "NO FINDINGS\n" : blocks.join("\n"));
-  run.write("build-verifier.md", "NO FINDINGS\nVERDICT: CLEAN\n");
+  run.write("review.md", blocks.length === 0 ? "NO FINDINGS\n" : blocks.join("\n"));
+  run.write("completeness.md", "NO FINDINGS\nVERDICT: CLEAN\n");
 }
 
 export function row(id: string, kind: Kind, path = "src/app.ts"): Row {
@@ -300,6 +296,6 @@ export function briefedHead(cls: string, wave: string, model = "sonnet", brief =
     "steps: .claude/build-steps.toml",
     `build: model=${model} | agent=a1 | sha=${wave}`,
     `freshen: merged | base=main | sha=${wave}`,
-    `wave: review-cursory, build-verifier | sha=${wave}`,
+    `wave: review, completeness | sha=${wave}`,
   ];
 }

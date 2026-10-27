@@ -5,6 +5,8 @@
  * `--print-checks`) and the G4 fixture list end to end.
  */
 
+import "./helpers/operatorEnv.ts";
+
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -31,9 +33,9 @@ import {
 const DEPS = { hunterMinLines: 20 };
 
 const WAVE_READERS: Record<RiskClass, string> = {
-  R0: "review-cursory, build-verifier",
-  R1: "review-cursory, gate-silent-failure-hunter, build-verifier",
-  R2: "review-cursory, gate-silent-failure-hunter, build-verifier, security-review",
+  R0: "review, completeness",
+  R1: "review, silent-failures, completeness",
+  R2: "review, silent-failures, completeness, security",
 };
 
 /** A briefed run's head lines, its wave naming the class's reader set. */
@@ -69,10 +71,10 @@ const failures = (r: Cli) => r.err.filter((l) => l.startsWith("  - ")).map((l) =
 
 /** The wave's reader files for class `cls`: the cursory read holds `blocks`; the rest are clean. */
 function wave(run: Run, cls: RiskClass, blocks: string[] = []): void {
-  run.write("review-cursory.md", blocks.length === 0 ? "NO FINDINGS\n" : blocks.join("\n"));
-  run.write("build-verifier.md", "NO FINDINGS\nVERDICT: CLEAN\n");
-  if (cls !== "R0") run.write("gate-silent-failure-hunter.md", "NO FINDINGS\n");
-  if (cls === "R2") run.write("security-review.md", "NO FINDINGS\n");
+  run.write("review.md", blocks.length === 0 ? "NO FINDINGS\n" : blocks.join("\n"));
+  run.write("completeness.md", "NO FINDINGS\nVERDICT: CLEAN\n");
+  if (cls !== "R0") run.write("silent-failures.md", "NO FINDINGS\n");
+  if (cls === "R2") run.write("security.md", "NO FINDINGS\n");
 }
 
 /** A run whose wave found nothing: every round empty, the verifier clean, the one claim passed. */
@@ -95,26 +97,26 @@ function fullRun(run: Run, opts: { codexFailed?: string } = {}) {
   const s1 = run.commit({ "src/app.ts": "export const a = 3;\n", "test/app.test.ts": "// pinned\n" }, "fix(close): round 1 — 2 rows");
   run.write("fix-1.txt", `CURSORY.1 · fixed · ${s1} — a is 3\nCURSORY.2 · fixed · ${s1} — pinned\n${EXIT_CHECKS}\n`);
   const confirm1 = stageFile(["- CURSORY.1 · unresolved — a is still wrong", "- CURSORY.2 · resolved"]);
-  if (opts.codexFailed === undefined) run.write("stage-confirm-1/review-cursory-codex.md", confirm1);
+  if (opts.codexFailed === undefined) run.write("stage-confirm-1/review-codex.md", confirm1);
   else {
-    run.write("stage-confirm-1/review-cursory.md", confirm1);
-    run.write("stage-confirm-1/review-cursory-codex.refused.txt", "### CODEX.101 — no kind\n- locator: src/app.ts:1\n");
+    run.write("stage-confirm-1/review.md", confirm1);
+    run.write("stage-confirm-1/review-codex.refused.txt", "### CODEX.101 — no kind\n- locator: src/app.ts:1\n");
   }
   run.handTest(1, `H1 · fail (code) · ${s1} — hand-test-1/H1.out — no answer came back\n`);
   run.build(["2"], s1);
   const s2 = run.commit({ "src/app.ts": "export const a = 4;\n" }, "fix(close): round 2 — 2 rows");
   run.write("fix-2.txt", `CURSORY.1 · fixed · ${s2} — a is 4\nHAND.1 · fixed · ${s2} — it answers\n${EXIT_CHECKS}\n`);
-  run.write("stage-confirm-2/review-cursory-codex.md", stageFile(["- CURSORY.1 · resolved", "- HAND.1 · resolved"]));
+  run.write("stage-confirm-2/review-codex.md", stageFile(["- CURSORY.1 · resolved", "- HAND.1 · resolved"]));
   run.handTest(2, `H1 · pass · ${s2} — hand-test-2/H1.out\n`);
   run.build(["3", "escalate", "final"], s2);
   const lines = [
     ...head(run, "R1"),
     `verifier: CLEAN | sha=${run.wave}`,
     `fix-1: 2/2 | model=sonnet | agent=f1 | from=${run.wave} | sha=${s1}`,
-    `confirm-1: ${opts.codexFailed === undefined ? "review-cursory-codex" : `review-cursory (codex failed: ${opts.codexFailed})`} | sha=${s1}`,
+    `confirm-1: ${opts.codexFailed === undefined ? "review-codex" : `review (codex failed: ${opts.codexFailed})`} | sha=${s1}`,
     `hand-test-1: 0/1 | sha=${s1}`,
     `fix-2: 2/2 | model=sonnet | agent=f2 | from=${s1} | sha=${s2}`,
-    `confirm-2: review-cursory-codex | sha=${s2}`,
+    `confirm-2: review-codex | sha=${s2}`,
     `hand-test-2: 1/1 | sha=${s2}`,
   ];
   return { lines, s2 };
@@ -225,14 +227,14 @@ test("3f. an `escalate:` whose open set held only a structure row fails, named",
     run.build(["1"], run.wave);
     const s1 = run.commit({ "src/app.ts": "export const a = 3;\n" }, "fix 1");
     run.write("fix-1.txt", `SIMP.1 · fixed · ${s1} — split\n${EXIT_CHECKS}\n`);
-    run.write("stage-confirm-1/review-cursory-codex.md", stageFile(["- SIMP.1 · unresolved — still two"]));
+    run.write("stage-confirm-1/review-codex.md", stageFile(["- SIMP.1 · unresolved — still two"]));
     run.build(["2"], s1);
     const s2 = run.commit({ "src/app.ts": "export const a = 4;\n" }, "fix 2");
     run.write("fix-2.txt", `SIMP.1 · fixed · ${s2} — split again\n${EXIT_CHECKS}\n`);
-    run.write("stage-confirm-2/review-cursory-codex.md", stageFile(["- SIMP.1 · unresolved — still two"]));
+    run.write("stage-confirm-2/review-codex.md", stageFile(["- SIMP.1 · unresolved — still two"]));
     run.build(["3", "escalate"], s2);
     const s3 = run.commit({ "src/app.ts": "export const a = 5;\n" }, "escalate");
-    run.write("stage-escalate/review-cursory-codex.md", stageFile([]));
+    run.write("stage-escalate/review-codex.md", stageFile([]));
     run.handTest(1, `H1 · pass · ${s3} — hand-test-1/H1.out\n`);
     run.build(["final"], s3);
     const rounds = JSON.parse(readFileSync(join(run.runDir, "table.json"), "utf8")).rounds;
@@ -241,11 +243,11 @@ test("3f. an `escalate:` whose open set held only a structure row fails, named",
       ...head(run, "R1"),
       `verifier: CLEAN | sha=${run.wave}`,
       `fix-1: 1/1 | model=sonnet | agent=f1 | from=${run.wave} | sha=${s1}`,
-      `confirm-1: review-cursory-codex | sha=${s1}`,
+      `confirm-1: review-codex | sha=${s1}`,
       `fix-2: 1/1 | model=sonnet | agent=f2 | from=${s1} | sha=${s2}`,
-      `confirm-2: review-cursory-codex | sha=${s2}`,
+      `confirm-2: review-codex | sha=${s2}`,
       `escalate: 1/1 | model=opus | agent=e1 | from=${s2} | sha=${s3}`,
-      `escalate-read: review-cursory-codex | sha=${s3}`,
+      `escalate-read: review-codex | sha=${s3}`,
       `hand-test-1: 1/1 | sha=${s3}`,
       "leftovers: pr-body | rows=1 | scope=plan-QRK-5",
       `ship: x | sha=${s3}`,
@@ -283,7 +285,7 @@ function stepNine(run: Run, open: boolean) {
     s.push(sha);
     run.write(fix, `CURSORY.1 · fixed · ${sha} — another try\n${EXIT_CHECKS}\n`);
     const resolved = next === "final" && !open;
-    run.write(`${stage}/review-cursory-codex.md`, stageFile([resolved ? "- CURSORY.1 · resolved" : "- CURSORY.1 · unresolved — not yet"]));
+    run.write(`${stage}/review-codex.md`, stageFile([resolved ? "- CURSORY.1 · resolved" : "- CURSORY.1 · unresolved — not yet"]));
     if (next === "final") run.handTest(1, `H1 · pass · ${sha} — hand-test-1/H1.out\n`);
     run.build([next], sha);
   });
@@ -291,13 +293,13 @@ function stepNine(run: Run, open: boolean) {
     ...head(run, "R1"),
     `verifier: CLEAN | sha=${run.wave}`,
     `fix-1: 1/1 | model=sonnet | agent=f1 | from=${run.wave} | sha=${s[0]}`,
-    `confirm-1: review-cursory-codex | sha=${s[0]}`,
+    `confirm-1: review-codex | sha=${s[0]}`,
     `fix-2: 1/1 | model=sonnet | agent=f2 | from=${s[0]} | sha=${s[1]}`,
-    `confirm-2: review-cursory-codex | sha=${s[1]}`,
+    `confirm-2: review-codex | sha=${s[1]}`,
     `fix-3: 1/1 | model=sonnet | agent=f3 | from=${s[1]} | sha=${s[2]}`,
-    `last-read: review-cursory-codex | sha=${s[2]}`,
+    `last-read: review-codex | sha=${s[2]}`,
     `escalate: 1/1 | model=opus | agent=e1 | from=${s[2]} | sha=${s[3]}`,
-    `escalate-read: review-cursory-codex | sha=${s[3]}`,
+    `escalate-read: review-codex | sha=${s[3]}`,
     `hand-test-1: 1/1 | sha=${s[3]}`,
     `ship: x | sha=${s[3]}`,
   ]);
@@ -344,12 +346,12 @@ test("unbank: the operator's answer fixed and read once passes, and the read's o
   await withRun(async (run) => {
     const { lines, at } = bankedRun(run);
     const fix = run.commit({ "src/app.ts": "export const a = 99;\n" }, "fix(unbank): CURSORY.1");
-    run.write("unbank/review-cursory.md", blk("CURSORY.1", "behavior"));
+    run.write("unbank/review.md", blk("CURSORY.1", "behavior"));
     const after = run.commit({ "src/app.ts": "export const a = 100;\n" }, "fix(unbank): the read's CURSORY.1");
     run.ledger([
       ...lines,
       `unbank: CURSORY.1 | from=${at} | sha=${fix} | model=sonnet | agent=u1`,
-      `unbank-read: review-cursory | sha=${fix}`,
+      `unbank-read: review | sha=${fix}`,
       `ship: x | sha=${after}`,
     ]);
     const r = await cli(run);
@@ -365,13 +367,13 @@ test("unbank: no read, a read at another head, no read file, an id never banked,
     const ship = `ship: x | sha=${fix}`;
     run.ledger([...lines, unbank, ship]);
     assert.deepEqual(failures(await cli(run)), ["missing line: unbank-read:"]);
-    run.ledger([...lines, unbank, `unbank-read: review-cursory | sha=${at}`, ship]);
+    run.ledger([...lines, unbank, `unbank-read: review | sha=${at}`, ship]);
     assert.deepEqual(failures(await cli(run)), [
       `unbank-read: sha=${at} — the read covers ${at.slice(0, 9)}..${fix}, so it names ${fix}; a read at another head read other code — run it again over that range`,
       "unbank-read: no unbank/ folder in the run dir",
     ]);
-    run.write("unbank/review-cursory.md", "NO FINDINGS — the answer is carried out\n");
-    const read = `unbank-read: review-cursory | sha=${fix}`;
+    run.write("unbank/review.md", "NO FINDINGS — the answer is carried out\n");
+    const read = `unbank-read: review | sha=${fix}`;
     run.ledger([...lines, `unbank: CURSORY.1, CURSORY.7 | from=${at} | sha=${fix} | model=opus | agent=u1`, read, ship]);
     assert.deepEqual(failures(await cli(run)), [
       "unbank: CURSORY.7 was never banked — name only ids a `banked:` line holds",
@@ -415,7 +417,7 @@ test("7. an old ledger (no `flow: 2`) fails with the flow-changed message: exit 
   });
 });
 
-test("8. Codex failed: a `review-cursory (codex failed: …)` read line with a colon and spaces passes; a renamed refused file is left out", async () => {
+test("8. Codex failed: a `review (codex failed: …)` read line with a colon and spaces passes; a renamed refused file is left out", async () => {
   await withRun(async (run) => {
     const { lines, s2 } = fullRun(run, { codexFailed: "exit 1: spawn timeout; no out file" });
     run.ledger([...lines, `ship: x | sha=${s2}`]);
@@ -520,21 +522,21 @@ test("the old gate's parser, line rules, and drift edge are gone from shipGate.t
 const L = (cls: RiskClass, wave: string, extra: string[] = []) =>
   parseLedger([`class: ${cls} — operator, 2026-09-28`, "flow: 2", ...extra, `wave: ${wave} | sha=aaaaaaa`].join("\n"));
 
-test("wave: a briefed run owes build-verifier at every class; --from-branch is exempt", () => {
-  assert.deepEqual(waveFailures(L("R0", "review-cursory")), [
-    "wave: no build-verifier — the verifier reads every run that has a brief, at every class; only `--from-branch` is exempt (/build §CLOSE)",
+test("wave: a briefed run owes completeness at every class; --from-branch is exempt", () => {
+  assert.deepEqual(waveFailures(L("R0", "review")), [
+    "wave: no completeness — the verifier reads every run that has a brief, at every class; only `--from-branch` is exempt (/build §CLOSE)",
   ]);
-  assert.deepEqual(waveFailures(L("R0", "review-cursory", ["from-branch: quick/x"])), []);
+  assert.deepEqual(waveFailures(L("R0", "review", ["from-branch: quick/x"])), []);
 });
 
-test("wave: R2 owes security-review and never lets it sit out; the hunter sits out only through skipped:", () => {
-  assert.deepEqual(waveFailures(L("R2", "review-cursory, gate-silent-failure-hunter, build-verifier | skipped: security-review — small")), [
-    "wave: no security-review — R2 owes it and it never sits out (/build §CLOSE)",
+test("wave: R2 owes security and never lets it sit out; the hunter sits out only through skipped:", () => {
+  assert.deepEqual(waveFailures(L("R2", "review, silent-failures, completeness | skipped: security — small")), [
+    "wave: no security — R2 owes it and it never sits out (/build §CLOSE)",
   ]);
-  assert.deepEqual(waveFailures(L("R1", "review-cursory, build-verifier")), [
-    "wave: no gate-silent-failure-hunter — R1 owes it; name it in the reader list or in `skipped: gate-silent-failure-hunter — <threshold>` (/build §CLOSE)",
+  assert.deepEqual(waveFailures(L("R1", "review, completeness")), [
+    "wave: no silent-failures — R1 owes it; name it in the reader list or in `skipped: silent-failures — <threshold>` (/build §CLOSE)",
   ]);
-  assert.deepEqual(waveFailures(L("R1", "review-cursory, build-verifier | skipped: gate-silent-failure-hunter — 12 < 20")), []);
+  assert.deepEqual(waveFailures(L("R1", "review, completeness | skipped: silent-failures — 12 < 20")), []);
 });
 
 test("gate(): the owed failures and notes pass through; unconfirmed class, from-branch, and skipped readers are notes", () => {
@@ -556,7 +558,7 @@ test("gate(): the owed failures and notes pass through; unconfirmed class, from-
       "class: R1 (agent, unconfirmed)",
       "flow: 2",
       "from-branch: quick/x",
-      "wave: review-cursory | skipped: gate-silent-failure-hunter — 3 < 20 | sha=aaaaaaa",
+      "wave: review | skipped: silent-failures — 3 < 20 | sha=aaaaaaa",
     ].join("\n")
   );
   assert.deepEqual(gate(ledger, owed), {
@@ -566,7 +568,7 @@ test("gate(): the owed failures and notes pass through; unconfirmed class, from-
       "class unconfirmed (agent) — the agent picked it; the ship notification says so",
       "from-branch: quick/x",
       "completeness unchecked — a from-branch run has no brief, so no verifier ran",
-      "skipped: gate-silent-failure-hunter — 3 < 20",
+      "skipped: silent-failures — 3 < 20",
       "signals: fallback",
     ],
     markerChecks: ["freshen", "wave"],

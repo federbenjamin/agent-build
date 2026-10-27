@@ -5,6 +5,8 @@
 // Driven through `makeExitWhenFlushed` against a fake host rather than the exported singleton:
 // mutating the real `process.exitCode` from a test would decide the test runner's own exit code.
 
+import "./helpers/operatorEnv.ts";
+
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { exitWhenFlushed, makeExitWhenFlushed } from "../lib/exitWhenFlushed.ts";

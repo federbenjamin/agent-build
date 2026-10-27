@@ -1,5 +1,7 @@
 /** repoId (`lib/repoId.ts`): the origin parser, the profile, the store's root and dir, the brief's
  *  location, and the CLI, over real throwaway repos. */
+import "./helpers/operatorEnv.ts";
+
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
@@ -9,10 +11,6 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { briefLocation, initStore, inStore, parseOrigin, repoId, repoProfile, storeDir, storeRoot } from "../lib/repoId.ts";
-
-// Strip inherited GIT_* before anything spawns git (docs/rules/tests.md §Tests): an inherited
-// GIT_DIR (a hook) would answer the origin and profile probes from another repo.
-for (const k of Object.keys(process.env)) if (k.startsWith("GIT_")) delete process.env[k];
 
 const SCRIPT = fileURLToPath(new URL("../lib/repoId.ts", import.meta.url));
 
@@ -148,4 +146,14 @@ test("the CLI prints repo, profile, store, and run root", () => {
     assert.equal(none.status, 0, none.stderr);
     assert.equal(none.stdout, "repo: none\nprofile: unset\nstore: none\nrun-root: /runs\n", "a folder that is no git repo");
   });
+});
+
+test("repoProfile and repoId hand a given env to every git call they make", () => {
+  const seen: (NodeJS.ProcessEnv | undefined)[] = [];
+  const exec = (_cmd: string, args: string[], opts: { env?: NodeJS.ProcessEnv }): string => (seen.push(opts.env), args[0] === "remote" ? "https://github.com/o/r.git" : "private");
+  const env = { ONLY: "this" };
+  repoId("/r", { exec, env });
+  repoProfile("/r", { exec, env });
+  assert.ok(seen.length >= 3);
+  assert.ok(seen.every((e) => e === env));
 });

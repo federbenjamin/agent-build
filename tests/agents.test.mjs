@@ -1,5 +1,7 @@
 // agents.json declares the build agents; agents/<name>.md holds each one's prompt. The harness's
 // generator reads both, so neither may hold a name the other lacks.
+import "../runtime/__tests__/helpers/operatorEnv.ts";
+
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";

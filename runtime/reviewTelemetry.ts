@@ -41,25 +41,22 @@ import { fixOfRound } from "./lib/owed.ts";
 import { isRiskClass, RISK_CLASS_READERS, type RiskClass } from "./lib/riskClass.ts";
 import { readerFiles } from "./lib/runDir.ts";
 import {
-  type FixFile,
   type FixRound,
   type Finding,
-  isFixRound,
   type Kind,
   KINDS,
-  parseFixFile,
   parseReaderFile,
   parseStageFile,
   parseStageKey,
   type RoundId,
-  roundOrder,
   type Stage,
   STAGES,
   type TableJson,
 } from "./lib/runFiles.ts";
+import { type FixFile, parseFixFile } from "./lib/fixFile.ts";
 import { appendJsonl, readJsonl, runStateFile } from "./lib/runState.ts";
 import { Shape } from "./lib/shape.ts";
-import { roundIntake } from "./lib/table.ts";
+import { droppedAndAgreed, fixRoundsIn } from "./lib/table.ts";
 import { readLedger, readTable, UsageError } from "./reviewTable.ts";
 import { DEFAULTS, loadThresholds } from "./thresholds.ts";
 
@@ -91,7 +88,7 @@ export class FlowChangedError extends Error {
 
 /** Agents that write no finding block but must still earn their keep by findings per fire. The
  * session counts them into `extra-sources.json` (`/build` §CLOSE names what each counts). */
-export const EXTRA_SOURCE_NAMES = ["prior-art", "test-author"] as const;
+export const EXTRA_SOURCE_NAMES = ["prior-art", "write-tests"] as const;
 export type ExtraSourceName = (typeof EXTRA_SOURCE_NAMES)[number];
 export const EXTRA_SOURCES_FILE = "extra-sources.json";
 
@@ -246,7 +243,7 @@ export interface AgentLookup {
 }
 
 /** A meta.json `agentType` as the build names it: a plugin agent's type carries the plugin prefix
- *  (`agent-build:review-cursory`), and the readers, builder and fixer are named bare. */
+ *  (`agent-build:review`), and the readers, builder and fixer are named bare. */
 function bareAgentType(v: unknown): string | null {
   return typeof v === "string" ? v.replace(/^[\w-]+:/, "") : null;
 }
@@ -350,8 +347,8 @@ function pathForms(file: string): string[] {
   return [...new Set(forms)];
 }
 
-/** Whether `text` names one of `forms` as a whole path: `a/review-cursory.md` does not name
- *  `a/review-cursory.md.refused.txt`, and a sentence's closing `.` is not part of the path. */
+/** Whether `text` names one of `forms` as a whole path: `a/review.md` does not name
+ *  `a/review.md.refused.txt`, and a sentence's closing `.` is not part of the path. */
 function namesPath(text: string, forms: readonly string[]): boolean {
   for (const form of forms) {
     for (let i = text.indexOf(form); i !== -1; i = text.indexOf(form, i + 1)) {
@@ -541,43 +538,6 @@ export interface RunMeta {
   runDir?: string;
 }
 
-/** The fix rounds `table.json` holds, in build order (a drift group's `drift-<n>` among them). */
-function fixRoundsIn(table: TableJson): FixRound[] {
-  return (Object.keys(table.rounds) as RoundId[]).filter(isFixRound).sort(roundOrder) as FixRound[];
-}
-
-/** The round whose intake reads fix round `r`'s rows back (round 1 → 2, … escalate and drift-<n> → final). */
-function roundAfter(r: FixRound, table: TableJson): RoundId | null {
-  for (const id of ["2", "3", "escalate", "final"] as const) {
-    if (roundIntake(id, table).carry.some((c) => c.fix === r)) return id;
-  }
-  return null;
-}
-
-/**
- * Every finding id (a row's id and its `also`) whose row the fixer `dropped` and the table then
- * closed. The table closes a dropped row only on the stage's `agree` (`lib/table.ts` routing; with no
- * stage read the drop stands, and the gate refuses a run whose read was owed and missing), so this is
- * "dropped with an agree". A disagreed drop comes back as a row and its findings survive.
- */
-export function droppedAndAgreed(table: TableJson, fixes: ReadonlyMap<FixRound, FixFile>): Set<string> {
-  const out = new Set<string>();
-  for (const r of fixRoundsIn(table)) {
-    const round = table.rounds[r];
-    const fix = fixes.get(r);
-    const next = roundAfter(r, table);
-    const closed = next === null ? undefined : table.rounds[next]?.closed;
-    if (!round || !fix || !closed) continue;
-    for (const row of round.rows) {
-      const line = fix.lines.find((l) => l.row === row.id);
-      if (line?.action === "dropped" && closed.includes(row.id)) {
-        for (const id of [row.id, ...row.also]) out.add(id);
-      }
-    }
-  }
-  return out;
-}
-
 export interface RunInputs {
   collected: readonly CollectedStage[];
   table: TableJson;
@@ -664,7 +624,7 @@ function buildFacts(build: NonNullable<Ledger["build"]>, lookup: AgentLookup, no
 }
 
 /** No Claude agent writes a Codex read's file (`codex -o` does), so no transcript can name its model. */
-const CODEX_READERS: ReadonlySet<string> = new Set(["review-cursory-codex"]);
+const CODEX_READERS: ReadonlySet<string> = new Set(["review-codex"]);
 
 /**
  * The full model ids one reader's agents ran at one stage: every agent `readerAgents` finds for each

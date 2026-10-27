@@ -1,0 +1,68 @@
+{
+  "status": "tuned",
+  "report": "hunter round 5 report (2026-10-23), arm J5-sampled: four exposure questions and a render-or-readiness question over the cut risk moment and the diff less tests, docs and lockfiles, sampled per file to 75,000 characters, combined by mean; cut-off 0.2228 chosen to minimise the cost-weighted loss (a miss priced at 5 hunter reads) on 77 labelled runs and unchanged on 97; fresh holdout (20 runs, frozen on 77) accuracy 0.70 against 0.65 for always running, loss $0.020 per decision below always running, AUC 0.824; on Jev by the operator's ruling of 2026-10-23",
+  "model": "jev-1.14.0",
+  "cutoff": 0.2228,
+  "combine": "mean",
+  "fields": {
+    "summary": {
+      "input": "risk-moment",
+      "cutBefore": "^(size|signals|model|metrics|decisions):"
+    },
+    "diff": {
+      "input": "diff",
+      "shape": "no-tests-docs-locks",
+      "maxChars": 75000,
+      "note": {
+        "field": "diff_note",
+        "text": "the change's diff: tests, docs and lockfiles left out"
+      }
+    }
+  },
+  "questions": {
+    "calls_outside": {
+      "type": "noul",
+      "instructions": "Look only at the production code this change adds or edits. Does it call an outside process, command, service, API, file, or database and then act on what comes back?",
+      "criteria": {
+        "true": "The changed code calls something outside the program and uses its result or exit status.",
+        "false": "The changed code calls nothing outside the program, or only text, configuration, or pure logic changed."
+      }
+    },
+    "new_outside_code": {
+      "type": "noul",
+      "instructions": "Does this change build new code that talks to outside programs, services, files, or a database, rather than adjusting text, configuration, tests, or a small piece of existing logic?",
+      "criteria": {
+        "true": "The change adds new code paths that depend on outside programs, services, files, or a database.",
+        "false": "The change adjusts text, configuration, tests, renames, or a small piece of existing logic."
+      }
+    },
+    "outside_dependence": {
+      "type": "score",
+      "instructions": "How much of the production code this change adds or edits calls outside programs, commands, services, APIs, files, or a database and acts on the result?",
+      "criteria": [
+        "None: only text, configuration, tests, renames, or pure logic changed.",
+        "One or two small outside calls added or touched in existing code.",
+        "A few outside calls, with their handling.",
+        "Several new code paths built on outside calls.",
+        "A large new piece of software built mainly on outside calls."
+      ]
+    },
+    "many_failure_points": {
+      "type": "noul",
+      "instructions": "Does this change add several new places where a call to an outside program, service, file, or database could fail, each needing its own handling?",
+      "criteria": {
+        "true": "Several new places in the changed code can fail because of something outside the program.",
+        "false": "The changed code adds no new place, or only one, where an outside failure can occur."
+      }
+    },
+    "render_or_readiness": {
+      "type": "noul",
+      "instructions": "Look only at the production code this change adds or edits. Does it add or change a screen, component, native module, or device or platform call whose result depends on something being ready in time: data still loading, a layout, permission, or subscription not yet set up, a native call or event that may fail or never arrive, or async state (effects, listeners, timers, stores) that decides what the user sees?",
+      "criteria": {
+        "true": "The changed code renders UI or calls a native module or device API, and what it shows or does depends on data, a call, an event, or a state that may be missing, late, or failed.",
+        "false": "The changed code renders no UI and calls no native module or device API, or what it renders is fixed: text, styling, layout constants, renames, or tests only."
+      }
+    }
+  },
+  "features": []
+}

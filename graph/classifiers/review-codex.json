@@ -1,0 +1,59 @@
+{
+  "status": "initial",
+  "report": "initial classifiers report (2026-10-22): an initial setup, sanity-checked on 15 recorded runs, not tuned",
+  "model": "jev-1.14.0",
+  "cutoff": 0.5,
+  "combine": "mean",
+  "fields": {
+    "diff": {
+      "input": "diff",
+      "shape": "production-code",
+      "maxChars": 60000,
+      "note": {
+        "field": "diff_note",
+        "text": "the change's diff, production code only: tests, docs, config and data files, lockfiles and generated copies left out"
+      }
+    }
+  },
+  "questions": {
+    "adds_branches": {
+      "type": "noul",
+      "instructions": "Look only at the production code this change adds or edits. Does it add branches, such as new conditions, loops, early returns, or error paths, rather than only data, text, configuration, or renames?",
+      "criteria": {
+        "true": "The changed code adds at least one new condition, loop, early return, or error path.",
+        "false": "The changed code adds no branch: it changes data, text, configuration, names, or straight-line code only."
+      }
+    },
+    "branching_added": {
+      "type": "score",
+      "instructions": "How much new branching logic (conditions, loops, early returns, error paths, state-dependent behavior) does the production code in this change add?",
+      "criteria": [
+        "None: data, text, configuration, or renames only.",
+        "One or two simple conditions.",
+        "A handful of conditions or one new loop or error path.",
+        "Many conditions, loops, and error paths spread over several functions.",
+        "A large new piece of logic built mainly on branching and state."
+      ]
+    },
+    "calls_outside": {
+      "type": "noul",
+      "instructions": "Look only at the production code this change adds or edits. Does it call an outside process, command, service, API, file, or database and then act on what comes back?",
+      "criteria": {
+        "true": "The changed code calls something outside the program and uses its result or exit status.",
+        "false": "The changed code calls nothing outside the program, or only text, configuration, or pure logic changed."
+      }
+    },
+    "outside_dependence": {
+      "type": "score",
+      "instructions": "How much of the production code this change adds or edits calls outside programs, commands, services, APIs, files, or a database and acts on the result?",
+      "criteria": [
+        "None: only text, configuration, tests, renames, or pure logic changed.",
+        "One or two small outside calls added or touched in existing code.",
+        "A few outside calls, with their handling.",
+        "Several new code paths built on outside calls.",
+        "A large new piece of software built mainly on outside calls."
+      ]
+    }
+  },
+  "features": []
+}

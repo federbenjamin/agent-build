@@ -1,4 +1,6 @@
 /** sessionLogPrune: what moves at a merge, what never moves, the merged line, and the exit codes. */
+import "./helpers/operatorEnv.ts";
+
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

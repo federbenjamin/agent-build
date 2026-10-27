@@ -1,4 +1,6 @@
 /** ledgerLine: the ledger's writer builds each line, checks it with the gate's parser, and never leaves a ledger the gate cannot read. */
+import "./helpers/operatorEnv.ts";
+
 import assert from "node:assert/strict";
 import { execFile, execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -47,14 +49,14 @@ function inTmp(fn: (dir: string, read: () => string) => void): void {
 
 test("composeLine: text segments, then fields, joined by ` | `; a move with no text starts at its first field and reads the same", () => {
   assert.equal(
-    composeLine("wave", ["review-cursory, build-verifier", "skipped: simplifier — 40 < 100"], [["sha", A]]),
-    `wave: review-cursory, build-verifier | skipped: simplifier — 40 < 100 | sha=${A}`
+    composeLine("wave", ["review, completeness", "skipped: simplifier — 40 < 100"], [["sha", A]]),
+    `wave: review, completeness | skipped: simplifier — 40 < 100 | sha=${A}`
   );
   assert.equal(composeLine("build", [], [["model", "session"], ["agent", "none"], ["sha", A]]), `build: model=session | agent=none | sha=${A}`);
   assert.equal(composeLine("flow", ["2"], []), "flow: 2");
   const merge = composeLine("drift-merge", [], [["from", A], ["sha", B]]);
   assert.equal(merge, `drift-merge: from=${A} | sha=${B}`);
-  const read = `drift-read: review-cursory | from=${A} | files=2 | sha=${A}`;
+  const read = `drift-read: review | from=${A} | files=2 | sha=${A}`;
   assert.deepEqual(parseLedger(`${BASE}${read}\n${merge}\n`).driftMerges, parseLedger(`${BASE}${read}\ndrift-merge: | from=${A} | sha=${B}\n`).driftMerges);
   assert.deepEqual(parseLedger(`${BASE}${read}\n${merge}\n`).driftMerges, [{ from: A, sha: B }]);
 });
@@ -73,14 +75,14 @@ test("parseArgs: the move, its text, and its fields in the order given", () => {
 
 test("parseArgs refuses what a typo could turn into a wrong line", () => {
   const refuses = (argv: string[], why: RegExp) => assert.throws(() => parseArgs(argv), why);
-  refuses(["wave", "review-cursory", "--sha", A], /needs --ledger/);
+  refuses(["wave", "review", "--sha", A], /needs --ledger/);
   refuses(["--ledger", "l.md"], /names no move/);
   refuses(["--ledger", "l.md", "waves", "x"], /`waves` is not a ledger move/);
   refuses(["--ledger", "l.md", "hand-test-<n>", "1/1"], /is not a ledger move/);
   refuses(["--ledger", "l.md", "wave", "x", "--shaa", A], /unknown flag\(s\): --shaa/);
   refuses(["--ledger", "l.md", "wave", "x", "--sha"], /--sha requires a value/);
   refuses(["--ledger", "l.md", "wave", "x", "--sha", A, "--sha", B], /--sha is given twice/);
-  refuses(["--ledger", "l.md", "wave", "review-cursory | sha=x"], /pass each `\|`-separated segment as its own argument/);
+  refuses(["--ledger", "l.md", "wave", "review | sha=x"], /pass each `\|`-separated segment as its own argument/);
   refuses(["--ledger", "l.md", "wave", " "], /a text segment is empty/);
   refuses(["--ledger", "l.md", "--replace", "--remove", "wave"], /two actions/);
   refuses(["--ledger", "l.md", "--remove", "wave", "x"], /--remove takes the move alone/);
@@ -112,7 +114,7 @@ test("a ledger whose `leftovers:` line predates `scope=` still takes lines; a ne
 
 test("the class line creates the ledger with `flow: 2` under it; nothing else can be the first line", () => {
   inTmp((dir, read) => {
-    const early = run(dir, "wave", "review-cursory", "--sha", A);
+    const early = run(dir, "wave", "review", "--sha", A);
     assert.equal(early.code, 1);
     assert.match(early.errors.join("\n"), /there is no ledger yet — its first line is the class line/);
     assert.equal(existsSync(join(dir, "ship.md")), false, "a refusal writes no file");
@@ -139,17 +141,17 @@ test("a class line that is no class line is refused with the parser's words, and
 test("`head` in a sha field is the tree's HEAD; a full line lands as the skill writes it", () => {
   inTmp((dir, read) => {
     writeFileSync(join(dir, "ship.md"), BASE);
-    const wave = run(dir, "wave", "review-cursory, build-verifier", "skipped: simplifier — 40 < 100", "repo: comment-reader", "--sha", "head");
+    const wave = run(dir, "wave", "review, completeness", "skipped: simplifier — 40 < 100", "repo: comment-reader", "--sha", "head");
     assert.equal(wave.code, 0, wave.errors.join("\n"));
     const fix = run(dir, "fix-1", "3/4", "--model", "opus", "--agent", "f1", "--from", "HEAD", "--sha", B);
     assert.equal(fix.code, 0, fix.errors.join("\n"));
     assert.equal(
       read(),
-      `${BASE}wave: review-cursory, build-verifier | skipped: simplifier — 40 < 100 | repo: comment-reader | sha=${HEAD_SHA}\n` +
+      `${BASE}wave: review, completeness | skipped: simplifier — 40 < 100 | repo: comment-reader | sha=${HEAD_SHA}\n` +
         `fix-1: 3/4 | model=opus | agent=f1 | from=${HEAD_SHA} | sha=${B}\n`
     );
     const ledger = parseLedger(read());
-    assert.deepEqual(ledger.waveReaders, ["review-cursory", "build-verifier"]);
+    assert.deepEqual(ledger.waveReaders, ["review", "completeness"]);
     assert.deepEqual(ledger.waveRepoReaders, ["comment-reader"]);
     assert.equal(ledger.fixes.get("fix-1")?.from, HEAD_SHA);
   });
@@ -159,10 +161,10 @@ test("a line the gate could not read is refused with the parser's message, and t
   inTmp((dir, read) => {
     writeFileSync(join(dir, "ship.md"), BASE);
     const cases: [string[], RegExp][] = [
-      [["wave", "review-cursory (split ×2), build-verifier", "--sha", A], /`\(split` is not a reader name/],
+      [["wave", "review (split ×2), completeness", "--sha", A], /`\(split` is not a reader name/],
       [["ship", "https://github.com/o/r/pull/9", "--sha", "83c5b6a70 (gate fixes after the second freshen)"], /holds a space/],
       [["ship", "https://github.com/o/r/pull/9", "--sha", "pending"], /sha=pending is not a git sha/],
-      [["confirm-1", "review-cursory-codex"], /needs a `sha=` field/],
+      [["confirm-1", "review-codex"], /needs a `sha=` field/],
       [["fix-1", "5/4", "--model", "opus", "--agent", "f1", "--from", A, "--sha", B], /fixed 5 is more than its 4 rows/],
       [["hand-test-1", "skipped — no claims", "--sha", A], /a skipped hand test tested no head/],
       [["leftovers", "somewhere", "--rows", "2", "--scope", "plan-QRK-5"], /is neither a ticket id/],
@@ -180,7 +182,7 @@ test("a line the gate could not read is refused with the parser's message, and t
 test("a move that already has a different line is refused and names it; --replace rewrites it in place", () => {
   inTmp((dir, read) => {
     const freshen = `freshen: ${A} | base=origin/main | branch=quick/x | sha=${A}`;
-    writeFileSync(join(dir, "ship.md"), `${BASE}brief: docs/build/briefs/x.md\n${freshen}\nwave: review-cursory | sha=${A}\n`);
+    writeFileSync(join(dir, "ship.md"), `${BASE}brief: docs/build/briefs/x.md\n${freshen}\nwave: review | sha=${A}\n`);
     const before = read();
 
     const again = run(dir, "freshen", B, "--base", "origin/main", "--branch", "quick/x", "--sha", B);
@@ -194,7 +196,7 @@ test("a move that already has a different line is refused and names it; --replac
     assert.deepEqual(replaced.out, [`replaced: ${freshen}`, `wrote: freshen: ${B} | base=origin/main | branch=quick/x | sha=${B}`]);
     assert.equal(
       read(),
-      `${BASE}brief: docs/build/briefs/x.md\nfreshen: ${B} | base=origin/main | branch=quick/x | sha=${B}\nwave: review-cursory | sha=${A}\n`,
+      `${BASE}brief: docs/build/briefs/x.md\nfreshen: ${B} | base=origin/main | branch=quick/x | sha=${B}\nwave: review | sha=${A}\n`,
       "the line keeps its place; the others are untouched"
     );
   });
@@ -212,14 +214,14 @@ test("a bad line for a move that already has one is refused for what is wrong wi
 
 test("a bad line for a once-only move that has a line names the line's own fault first, then the standing line", () => {
   inTmp((dir, read) => {
-    writeFileSync(join(dir, "ship.md"), `${BASE}wave: review-cursory | sha=${A}\n`);
+    writeFileSync(join(dir, "ship.md"), `${BASE}wave: review | sha=${A}\n`);
     const before = read();
-    const bad = run(dir, "wave", "review-cursory (split ×2), build-verifier", "--sha", B);
+    const bad = run(dir, "wave", "review (split ×2), completeness", "--sha", B);
     assert.equal(bad.code, 1);
     const said = bad.errors.join("\n");
     assert.match(said, /refused — .*`\(split` is not a reader name/);
     assert.doesNotMatch(said, /two `wave:` lines/);
-    assert.match(said, new RegExp(`and the ledger holds \`wave: review-cursory \\| sha=${A}\`: once the line reads, \`--replace\` rewrites it`));
+    assert.match(said, new RegExp(`and the ledger holds \`wave: review \\| sha=${A}\`: once the line reads, \`--replace\` rewrites it`));
     assert.equal(read(), before);
 
     const title = run(dir, "class", "# Ship ledger — QRK-664");
@@ -230,14 +232,14 @@ test("a bad line for a once-only move that has a line names the line's own fault
 
 test("the same line written twice is left alone; a repeatable move takes a second, different line", () => {
   inTmp((dir, read) => {
-    writeFileSync(join(dir, "ship.md"), `${BASE}wave: review-cursory | sha=${A}\n`);
-    const same = run(dir, "wave", "review-cursory", "--sha", A);
+    writeFileSync(join(dir, "ship.md"), `${BASE}wave: review | sha=${A}\n`);
+    const same = run(dir, "wave", "review", "--sha", A);
     assert.equal(same.code, 0);
-    assert.deepEqual(same.out, [`unchanged: wave: review-cursory | sha=${A}`]);
+    assert.deepEqual(same.out, [`unchanged: wave: review | sha=${A}`]);
 
     assert.equal(run(dir, "leftovers", "QRK-12", "--rows", "2", "--scope", "plan-QRK-5").code, 0);
     assert.equal(run(dir, "leftovers", "QRK-12", "--rows", "5", "--scope", "plan-QRK-5").code, 0);
-    assert.equal(read(), `${BASE}wave: review-cursory | sha=${A}\nleftovers: QRK-12 | rows=2 | scope=plan-QRK-5\nleftovers: QRK-12 | rows=5 | scope=plan-QRK-5\n`);
+    assert.equal(read(), `${BASE}wave: review | sha=${A}\nleftovers: QRK-12 | rows=2 | scope=plan-QRK-5\nleftovers: QRK-12 | rows=5 | scope=plan-QRK-5\n`);
     assert.equal(parseLedger(read()).leftovers?.rows, 5);
   });
 });
@@ -267,7 +269,7 @@ test("--remove deletes the move's last line; never the class or flow line, never
       assert.equal(r.code, 1, move);
       assert.match(r.errors.join("\n"), why);
     }
-    assert.equal(run(dir, "--replace", "wave", "review-cursory", "--sha", A).code, 1, "nothing to replace");
+    assert.equal(run(dir, "--replace", "wave", "review", "--sha", A).code, 1, "nothing to replace");
   });
 });
 
@@ -284,11 +286,11 @@ test("a ledger that was unreadable before the change says so, and --replace on t
 });
 
 test("applyLine keeps prose and blank lines it did not write, and an empty file is no ledger", () => {
-  const withProse = `${CLASS}\nflow: 2\n\nA note the session left.\nwave: review-cursory | sha=${A}\n`;
+  const withProse = `${CLASS}\nflow: 2\n\nA note the session left.\nwave: review | sha=${A}\n`;
   const next = applyLine(withProse, "add", "verifier", `verifier: CLEAN | sha=${A}`);
   assert.ok(next.ok);
   assert.equal(next.text, `${withProse}verifier: CLEAN | sha=${A}\n`);
-  assert.deepEqual(applyLine("\n", "add", "wave", `wave: review-cursory | sha=${A}`), {
+  assert.deepEqual(applyLine("\n", "add", "wave", `wave: review | sha=${A}`), {
     ok: false,
     why: 'there is no ledger yet — its first line is the class line: `class "R<n> — <who>, <YYYY-MM-DD>" --measured-at head`',
   });
@@ -350,8 +352,8 @@ test("calls run side by side all land: every line a call reports as written is i
 
 test("a first line that is refused makes no folder", () => {
   inTmp((dir) => {
-    assert.equal(run(dir, "wave", "review-cursory", "--sha", A).code, 1);
-    const nested = main(["--ledger", "run/ship.md", "wave", "review-cursory", "--sha", A], dir, () => {}, { head: () => HEAD_SHA });
+    assert.equal(run(dir, "wave", "review", "--sha", A).code, 1);
+    const nested = main(["--ledger", "run/ship.md", "wave", "review", "--sha", A], dir, () => {}, { head: () => HEAD_SHA });
     assert.equal(nested, 1);
     assert.equal(existsSync(join(dir, "run")), false);
   });
@@ -371,7 +373,7 @@ test("run as a script: `head` is read from the cwd's real HEAD, and a tree with 
     );
     writeFileSync(join(dir, "f.txt"), "x\n");
     git("add", "f.txt");
-    git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "one");
+    git("-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "one");
     const head = git("rev-parse", "HEAD").trim();
     const out = node("--ledger", "run/ship.md", "class", "R0 — operator, 2026-10-01", "--measured-at", "head");
     assert.equal(out, `wrote: class: R0 — operator, 2026-10-01 | measured-at=${head}\nwrote: flow: 2\n`);

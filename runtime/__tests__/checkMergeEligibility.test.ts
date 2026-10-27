@@ -9,6 +9,8 @@
  * in-process.
  */
 
+import "./helpers/operatorEnv.ts";
+
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -326,18 +328,18 @@ function passingRun(run: Run, opts: { cls: string; rows: boolean; claims: boolea
       ? { "1": round(run.wave, [row("CURSORY.1", "behavior")]), "2": round(s1), "3": round(s1), escalate: round(s1), final: finalRound(s1) }
       : emptyRounds(run.wave)
   );
-  run.write("build-verifier.md", "VERDICT: CLEAN\n");
+  run.write("completeness.md", "VERDICT: CLEAN\n");
   if (opts.rows) {
     run.write("fix-1.txt", `CURSORY.1 · fixed · ${s1} — a is 3\n${EXIT_CHECKS}\n`);
-    run.write("stage-confirm-1/review-cursory-codex.md", "## Status\n- CURSORY.1 · resolved\n\n## New\nNO FINDINGS\n");
+    run.write("stage-confirm-1/review-codex.md", "## Status\n- CURSORY.1 · resolved\n\n## New\nNO FINDINGS\n");
   }
   if (opts.claims) run.write("hand-test-1.txt", `H1 · pass · ${s1} — hand-test-1/H1.out\n`);
-  const readers = opts.cls === "R0" ? "review-cursory, build-verifier" : "review-cursory, gate-silent-failure-hunter, build-verifier";
+  const readers = opts.cls === "R0" ? "review, completeness" : "review, silent-failures, completeness";
   run.ledger([
     ...briefedHead(opts.cls, run.wave).map((l) => (l.startsWith("wave:") ? `wave: ${readers} | sha=${run.wave}` : l)),
     `verifier: CLEAN | sha=${run.wave}`,
     ...(opts.rows
-      ? [`fix-1: 1/1 | model=sonnet | agent=f1 | from=${run.wave} | sha=${s1}`, `confirm-1: review-cursory-codex | sha=${s1}`]
+      ? [`fix-1: 1/1 | model=sonnet | agent=f1 | from=${run.wave} | sha=${s1}`, `confirm-1: review-codex | sha=${s1}`]
       : []),
     opts.claims ? `hand-test-1: 1/1 | sha=${s1}` : "hand-test-1: skipped — no claims",
     `ship: x | sha=${s1}`,
@@ -408,7 +410,7 @@ test("deriveRequiredChecks: a retired /close-out ledger or an old-flow ledger th
     await assert.rejects(() => deriveRequiredChecks(path), /retired \/close-out grammar/);
     const noClass = writeLedger(dir, `freshen: abc1234 | sha=abc1234\n`);
     await assert.rejects(() => deriveRequiredChecks(noClass), /first line must be `class:/);
-    const oldFlow = writeLedger(dir, ledgerBody("R1", "review-cursory"));
+    const oldFlow = writeLedger(dir, ledgerBody("R1", "review"));
     await assert.rejects(() => deriveRequiredChecks(oldFlow), (e: Error) => e.message === FLOW_CHANGED);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -500,7 +502,7 @@ test("spawn: no PR number → usage message on stderr, exit 1", () => {
 test("spawn: --ledger + --require together exits 1 before any `gh` call", () => {
   const dir = mkdtempSync(join(tmpdir(), "check-merge-eligibility-spawn-"));
   try {
-    const path = writeLedger(dir, ledgerBody("R1", "review-cursory"));
+    const path = writeLedger(dir, ledgerBody("R1", "review"));
     const r = spawnSmoke(TSX_BIN, [SCRIPT, "123", "--ledger", path, "--require", "verifier"], {
       cwd: ROOT,
     });

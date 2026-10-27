@@ -1,7 +1,7 @@
 {
   "agents": [
     {
-      "name": "build-verifier",
+      "name": "completeness",
       "description": "Completeness reader in the /build CLOSE wave: grades the diff against the brief committed as the branch first commit. Read-only.",
       "claudeModel": "sonnet",
       "codexModel": "gpt-5.6-terra",
@@ -14,7 +14,7 @@
       }
     },
     {
-      "name": "brief-writer",
+      "name": "write-brief",
       "description": "The /build brief writer: one unit's brief from its ticket, plan sections, or request, checked and classed. Never commits.",
       "claudeModel": "fable",
       "codexModel": "gpt-5.6-sol",
@@ -51,7 +51,7 @@
       }
     },
     {
-      "name": "gate-silent-failure-hunter",
+      "name": "silent-failures",
       "description": "Silent-failure reader in the /build CLOSE wave at R1 and above: swallowed errors, bad fallbacks, unobservable degrade paths. Read-only.",
       "claudeModel": "sonnet",
       "codexModel": "gpt-5.6-sol",
@@ -77,7 +77,7 @@
       }
     },
     {
-      "name": "hand-tester",
+      "name": "hand-test",
       "description": "Runs the brief's hand test block in the session tree and records pass or fail. Edits no code.",
       "claudeModel": "opus",
       "codexModel": "gpt-5.6-sol",
@@ -103,7 +103,20 @@
       }
     },
     {
-      "name": "review-cursory",
+      "name": "answer-question",
+      "description": "Settles one question a build-graph agent raised from the code, brief, plan, docs, tracker or decision principles, naming its source, or refuses to the operator with what it searched. Graph runs only; read-only on the repo.",
+      "claudeModel": "fable",
+      "codexModel": "gpt-5.6-sol",
+      "codexReasoningEffort": "high",
+      "codexSandboxMode": "read-only",
+      "context": {
+        "claudeMd": true,
+        "contract": true,
+        "principles": true
+      }
+    },
+    {
+      "name": "review",
       "description": "Generalist reader of one diff in the /build CLOSE wave, and the whole review at R0; its Rubric is the one finding block every reader uses. Read-only.",
       "claudeModel": "sonnet",
       "codexModel": "gpt-5.6-sol",
@@ -116,7 +129,7 @@
       }
     },
     {
-      "name": "security-review",
+      "name": "security",
       "description": "Security reader in the /build CLOSE wave at R2: rule compliance and concrete exploitability. Read-only on the code.",
       "claudeModel": "sonnet",
       "codexModel": "gpt-5.6-sol",
@@ -125,6 +138,19 @@
       "context": {
         "claudeMd": true,
         "contract": true,
+        "principles": false
+      }
+    },
+    {
+      "name": "link-slices",
+      "description": "The links between a fix round's draft slices, for fixers that run at once: what one slice's fix changes that another slice's files use. Read-only but for its links file.",
+      "claudeModel": "haiku",
+      "codexModel": "gpt-5.6-terra",
+      "codexReasoningEffort": "medium",
+      "codexSandboxMode": "read-only",
+      "context": {
+        "claudeMd": false,
+        "contract": false,
         "principles": false
       }
     },
@@ -142,7 +168,7 @@
       }
     },
     {
-      "name": "test-author",
+      "name": "write-tests",
       "description": "Writes and mutation-proves batches of three or more tests for code someone else wrote, from its slice of the brief. A database slice runs as a Claude spawn in its own worktree; every other slice runs on Codex in the build writers worktree.",
       "claudeModel": "sonnet",
       "codexModel": "gpt-5.6-terra",

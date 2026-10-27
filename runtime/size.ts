@@ -12,18 +12,18 @@ import { readFileSync } from "node:fs";
 import { assertKnownFlags, takeValue } from "./lib/cliArgs.ts";
 import { isMain } from "./lib/isMain.ts";
 import { isRiskClass, RISK_CLASSES, type RiskClass } from "./lib/riskClass.ts";
+import { TEST_PATH_RES } from "./lib/testPaths.ts";
 import { BEHAVIOR_MD_RES } from "./reviewLensSelect.ts";
 import { stepCommand } from "./steps.ts";
 import { bucketFor, bucketRank, loadThresholds, type SizeBucket } from "./thresholds.ts";
 
-const TEST_RES = [/(^|\/)__tests__\//, /(^|\/)tests?\//, /\.(test|spec)\.[a-z]+$/, /_test\.[a-z]+$/];
 const PROSE_RES = [/^docs\//, /\.mdx?$/, /\.txt$/, /(^|\/)(README|CHANGELOG|LICENSE)(\.[a-z]+)?$/i];
 const LOCK_RES = [/(^|\/)(pnpm-lock\.yaml|package-lock\.json|yarn\.lock|Cargo\.lock|poetry\.lock|go\.sum)$/];
 
 /** A path that never counts: tests, prose docs (behavior markdown excepted), lockfiles. */
 export function isUncounted(path: string): boolean {
   if (BEHAVIOR_MD_RES.some((re) => re.test(path))) return false;
-  return [...TEST_RES, ...PROSE_RES, ...LOCK_RES].some((re) => re.test(path));
+  return [...TEST_PATH_RES,...PROSE_RES, ...LOCK_RES].some((re) => re.test(path));
 }
 
 export type Size = { counted: number; byDir: Record<string, number> };

@@ -135,8 +135,8 @@ export interface FixLine {
   sha: string;
 }
 
-/** A read line's reader token. `review-cursory (codex failed: <why>)` is the Sonnet read that
- *  stood in for a failed Codex run: `reader` is `review-cursory`, `codexFailed` is `<why>`. */
+/** A read line's reader token. `review (codex failed: <why>)` is the Sonnet read that
+ *  stood in for a failed Codex run: `reader` is `review`, `codexFailed` is `<why>`. */
 export interface ReadToken {
   reader: StageReaderName;
   codexFailed: string | null;
@@ -260,7 +260,7 @@ const PINNED_CLASS_FIELDS = /^—\s+\S.*,\s*\d{4}-\d{2}-\d{2}/;
 const UNCONFIRMED_CLASS_FIELDS = /^—\s+agent \(unconfirmed\),|\(agent, unconfirmed\)/;
 const COUNT_PAIR = /^(\d+)\/(\d+)$/;
 const AGENT_ID = /^[A-Za-z0-9_-]+$/;
-const CODEX_FAILED = /^review-cursory \(codex failed: ([^,|]*\S[^,|]*)\)$/;
+const CODEX_FAILED = /^review \(codex failed: ([^,|]*\S[^,|]*)\)$/;
 const VERIFIER_BY = /^hand-test-([1-9]\d*):(H[1-9]\d*)$/;
 const LEFTOVERS_TO = /^([A-Z][A-Z0-9]*-\d+|pr-body)$/;
 const LEFTOVERS_SCOPE = /^(session-[0-9a-f]{8}|plan-[A-Za-z0-9._-]+)$/;
@@ -413,23 +413,23 @@ function readersOf(move: ReadMove, list: string): ReadToken[] {
   for (const raw of list.split(",").map((s) => s.trim())) {
     const failed = CODEX_FAILED.exec(raw);
     if (failed) {
-      tokens.push({ reader: "review-cursory", codexFailed: failed[1]!.trim() });
+      tokens.push({ reader: "review", codexFailed: failed[1]!.trim() });
       continue;
     }
     if (!(STAGE_READER_NAMES as readonly string[]).includes(raw)) {
       fail(
         move,
-        `\`${raw}\` is not a reader — write one of ${STAGE_READER_NAMES.join(", ")}, or \`review-cursory (codex failed: <why>)\` with no \`,\` or \`|\` in <why> (write \`;\`)`
+        `\`${raw}\` is not a reader — write one of ${STAGE_READER_NAMES.join(", ")}, or \`review (codex failed: <why>)\` with no \`,\` or \`|\` in <why> (write \`;\`)`
       );
     }
     tokens.push({ reader: raw as StageReaderName, codexFailed: null });
   }
   const names = tokens.map((t) => (t.codexFailed === null ? t.reader : `${t.reader} (codex failed)`));
   if (new Set(names).size !== names.length) fail(move, "names one reader twice");
-  // The drift read and the unbank read are one cursory read each: security-review reads a fix at
+  // The drift read and the unbank read are one cursory read each: security reads a fix at
   // `confirm-1` and `confirm-2` only.
-  if ((move === "drift-read" || move === "unbank-read") && (tokens.length !== 1 || tokens[0]!.reader !== "review-cursory")) {
-    fail(move, "reads with `review-cursory` only");
+  if ((move === "drift-read" || move === "unbank-read") && (tokens.length !== 1 || tokens[0]!.reader !== "review")) {
+    fail(move, "reads with `review` only");
   }
   return tokens;
 }
@@ -719,7 +719,7 @@ export function parseLedger(text: string): Ledger {
         break;
       case "leftovers": {
         const to = oneText(name, line, "<ticket id | pr-body> | rows=<n> | scope=<scope>");
-        if (!LEFTOVERS_TO.test(to)) fail(name, `\`${to}\` is neither a ticket id (\`QRK-12\`) nor \`pr-body\``);
+        if (!LEFTOVERS_TO.test(to)) fail(name, `\`${to}\` is neither a ticket id (\`ENG-12\`) nor \`pr-body\``);
         const scope = line.fields.scope ?? null;
         if (scope !== null && !LEFTOVERS_SCOPE.test(scope)) {
           fail(name, `scope=${scope} is neither \`plan-<the plan's epic id>\` nor \`session-<first 8 characters of the session id>\``);

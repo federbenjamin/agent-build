@@ -1,4 +1,6 @@
 /** hooks/no-push-guard.sh: the PreToolUse:Bash hook that keeps a subagent from pushing or touching PRs. */
+import "./helpers/operatorEnv.ts";
+
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -6,8 +8,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-
-for (const k of Object.keys(process.env)) if (k.startsWith("GIT_")) delete process.env[k];
 
 const ROOT = fileURLToPath(new URL("../..", import.meta.url));
 const HOOK = join(ROOT, "hooks", "no-push-guard.sh");
@@ -21,7 +21,7 @@ function makeRepo(name: string, withSteps: boolean): string {
   execFileSync("git", ["init", "-q"], { cwd: dir, env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" } });
   if (withSteps) {
     mkdirSync(join(dir, ".claude"));
-    writeFileSync(join(dir, ".claude", "build-steps.toml"), 'push = "pnpm push"\npr_open = "pnpm pr:open"\nmerge = "pnpm pr:merge"\n');
+    writeFileSync(join(dir, ".claude", "build-steps.toml"), 'push = "pnpm push"\npr_open = "pnpm pr:open"\nmerge = "pnpm pr:merge"\npublish = "node runtime/publish.ts"\n');
   }
   return dir;
 }
@@ -157,8 +157,8 @@ test("a ship command that is only data passes; one in a substitution or a shell 
   }
 });
 
-test("the repo's own push, pr_open and merge steps are blocked when run through a script runner", () => {
-  for (const cmd of ["pnpm push", "pnpm pr:open", "pnpm pr:merge", "pnpm run pr:merge", "npx pnpm pr:merge", "pnpm -s test && pnpm pr:merge"]) {
+test("the repo's own push, pr_open, merge and publish steps are blocked when run through a script runner", () => {
+  for (const cmd of ["pnpm push", "pnpm pr:open", "pnpm pr:merge", "pnpm run pr:merge", "npx pnpm pr:merge", "pnpm -s test && pnpm pr:merge", "node runtime/publish.ts --dry-run"]) {
     expectBlocked(cmd, STEP_REPO);
   }
 });
